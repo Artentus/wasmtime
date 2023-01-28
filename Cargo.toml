@@ -156,7 +156,7 @@ cranelift = { path = "cranelift/umbrella", version = "0.93.0" }
 
 winch-codegen = { path = "winch/codegen", version = "=0.4.0" }
 
-target-lexicon = { version = "0.12.3", default-features = false, features = ["std"] }
+target-lexicon = { git = "https://github.com/Artentus/target-lexicon.git", default-features = false, features = ["std"] }
 anyhow = "1.0.22"
 wasmparser = "0.96.0"
 wat = "1.0.52"
@@ -170,7 +170,7 @@ windows-sys = "0.42.0"
 env_logger = "0.9"
 rustix = "0.36.0"
 log = { version = "0.4.8", default-features = false }
-object = { version = "0.29", default-features = false, features = ['read_core', 'elf', 'std'] }
+object = { git = "https://github.com/Artentus/object", default-features = false, features = ['read_core', 'elf', 'std'] }
 gimli = { version = "0.26.0", default-features = false, features = ['read', 'std'] }
 clap = { version = "3.2.0", features = ["color", "suggestions", "derive"] }
 hashbrown = "0.12"

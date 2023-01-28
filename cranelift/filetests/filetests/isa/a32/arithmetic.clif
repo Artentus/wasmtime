@@ -1,0 +1,959 @@
+test compile precise-output
+target a32
+
+;;;; ADD
+
+function %add32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = iadd.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   add a0, a0, a1
+;   ret
+
+
+function %add16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = iadd.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   add a0, a0, a1
+;   ret
+
+
+function %add8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = iadd.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   add a0, a0, a1
+;   ret
+
+
+function %add64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = iadd.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   add a0, a0, a2
+;   addc a1, a1, a3
+;   ret
+
+
+;;;; SUB
+
+function %sub32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = isub.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   sub a0, a0, a1
+;   ret
+
+
+function %sub16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = isub.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   sub a0, a0, a1
+;   ret
+
+
+function %sub8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = isub.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   sub a0, a0, a1
+;   ret
+
+
+function %sub64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = isub.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   sub a0, a0, a2
+;   subb a1, a1, a3
+;   ret
+
+
+;;;; AND
+
+function %and32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = band.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   and a0, a0, a1
+;   ret
+
+
+function %and16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = band.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   and a0, a0, a1
+;   ret
+
+
+function %and8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = band.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   and a0, a0, a1
+;   ret
+
+
+function %and64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = band.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   and a0, a0, a2
+;   and a1, a1, a3
+;   ret
+
+
+;;;; OR
+
+function %or32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = bor.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   or a0, a0, a1
+;   ret
+
+
+function %or16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = bor.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   or a0, a0, a1
+;   ret
+
+
+function %or8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = bor.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   or a0, a0, a1
+;   ret
+
+
+function %or64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = bor.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   or a0, a0, a2
+;   or a1, a1, a3
+;   ret
+
+
+;;;; XOR
+
+function %xor32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = bxor.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a0, a0, a1
+;   ret
+
+
+function %xor16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = bxor.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a0, a0, a1
+;   ret
+
+
+function %xor8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = bxor.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a0, a0, a1
+;   ret
+
+
+function %xor64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = bxor.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a0, a0, a2
+;   xor a1, a1, a3
+;   ret
+
+
+;;;; SHL
+
+function %shl32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = ishl.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   shl a0, a0, a1
+;   ret
+
+
+function %shl16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = ishl.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   and a3, a1, 15
+;   shl a0, a0, a3
+;   ret
+
+
+function %shl8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = ishl.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   and a3, a1, 7
+;   shl a0, a0, a3
+;   ret
+
+
+function %shl64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = ishl.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   and a5, a2, 63
+;   ldi a7, 64
+;   sub t1, a7, a5
+;   shl t3, a0, a5
+;   lsr t5, a0, t1
+;   shl a2, a1, a5
+;   or a2, t5, a2
+;   cmp a5, 32
+;   mv.u.ge a6, t3, zero
+;   mv.u.ge a7, a2, t3
+;   cmp a5, zero
+;   mv.eq a0, a6, a0
+;   mv.eq a1, a7, a1
+;   ret
+
+
+;;;; USHR
+
+function %ushr32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = ushr.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   lsr a0, a0, a1
+;   ret
+
+
+function %ushr16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = ushr.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   and a3, a1, 15
+;   lsr a0, a0, a3
+;   ret
+
+
+function %ushr8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = ushr.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   and a3, a1, 7
+;   lsr a0, a0, a3
+;   ret
+
+
+function %ushr64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = ushr.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   and a5, a2, 63
+;   ldi a7, 64
+;   sub t1, a7, a5
+;   lsr t3, a1, a5
+;   shl t5, a1, t1
+;   lsr a2, a0, a5
+;   or a2, t5, a2
+;   cmp a5, 32
+;   mv.u.ge a6, t3, zero
+;   mv.u.ge a7, a2, t3
+;   cmp a5, zero
+;   mv.eq a1, a6, a1
+;   mv.eq a0, a7, a0
+;   ret
+
+
+;;;; SSHR
+
+function %sshr32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = sshr.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   asr a0, a0, a1
+;   ret
+
+
+function %sshr16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = sshr.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   and a3, a1, 15
+;   asr a0, a0, a3
+;   ret
+
+
+function %sshr8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = sshr.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   and a3, a1, 7
+;   asr a0, a0, a3
+;   ret
+
+
+function %sshr64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = sshr.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   and a5, a2, 63
+;   ldi a7, 64
+;   sub t1, a7, a5
+;   asr t3, a1, a5
+;   shl t5, a1, t1
+;   asr a2, a0, a5
+;   or a2, t5, a2
+;   cmp a1, zero
+;   mv.s.l a6, zero, -1
+;   cmp a5, 32
+;   mv.u.ge t0, t3, a6
+;   mv.u.ge t2, a2, t3
+;   cmp a5, zero
+;   mv.eq a1, t0, a1
+;   mv.eq a0, t2, a0
+;   ret
+
+
+;;;; MUL
+
+function %mul32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = imul.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   mul a0, a0, a1
+;   ret
+
+
+function %mul16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = imul.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   mul a0, a0, a1
+;   ret
+
+
+function %mul8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = imul.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   mul a0, a0, a1
+;   ret
+
+
+function %mul64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = imul.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   mul a5, a0, a2
+;   mov t4, a5
+;   mulhuu a7, a0, a2
+;   mul t1, a0, a3
+;   mul t3, a1, a2
+;   add t5, a7, t1
+;   add a1, t5, t3
+;   mov a0, t4
+;   ret
+
+
+;;;; UMULHI
+
+function %umulhi32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = umulhi.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   mulhuu a0, a0, a1
+;   ret
+
+
+function %umulhi64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = umulhi.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   mulhuu a5, a0, a2
+;   mul a7, a1, a3
+;   mulhuu t1, a1, a3
+;   mul t3, a0, a3
+;   mulhuu t5, a0, a3
+;   mul a0, a1, a2
+;   mulhuu a2, a1, a2
+;   add a4, a5, t3
+;   addc a6, zero, t5
+;   addc t0, zero, zero
+;   add t2, a4, a0
+;   addc t4, a6, a2
+;   addc t6, t0, zero
+;   add a0, t4, a7
+;   addc a1, t6, t1
+;   ret
+
+
+;;;; SMULHI
+
+function %smulhi32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = smulhi.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   mulhss a0, a0, a1
+;   ret
+
+
+function %smulhi64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = smulhi.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   mulhuu a5, a0, a2
+;   mul a7, a1, a3
+;   mulhss t1, a1, a3
+;   mul t3, a0, a3
+;   mulhus t5, a0, a3
+;   mul a0, a2, a1
+;   mulhus a2, a2, a1
+;   add a4, a5, t3
+;   addc a6, zero, t5
+;   addc t0, zero, zero
+;   add t2, a4, a0
+;   addc t4, a6, a2
+;   addc t6, t0, zero
+;   add a0, t4, a7
+;   addc a1, t6, t1
+;   ret
+
+
+;;;; UDIV
+
+function %udiv32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = udiv.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a4, %UDiv32+0
+;   call_ind a4
+;   ret
+
+
+function %udiv64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = udiv.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a7, %UDiv64+0
+;   call_ind a7
+;   ret
+
+
+;;;; SDIV
+
+function %sdiv32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = sdiv.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a4, %SDiv32+0
+;   call_ind a4
+;   ret
+
+
+function %sdiv64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = sdiv.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a7, %SDiv64+0
+;   call_ind a7
+;   ret
+
+
+;;;; UREM
+
+function %urem32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = urem.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a4, %URem32+0
+;   call_ind a4
+;   ret
+
+
+function %urem64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = urem.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a7, %URem64+0
+;   call_ind a7
+;   ret
+
+
+;;;; SREM
+
+function %srem32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = srem.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a4, %SRem32+0
+;   call_ind a4
+;   ret
+
+
+function %srem64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = srem.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a7, %SRem64+0
+;   call_ind a7
+;   ret
+
+
+;;;; NEG
+
+function %neg32(i32) -> i32 {
+block0(v0: i32):
+  v1 = ineg.i32 v0
+  return v1
+}
+
+; block0:
+;   sub a0, zero, a0
+;   ret
+
+
+function %neg16(i16) -> i16 {
+block0(v0: i16):
+  v1 = ineg.i16 v0
+  return v1
+}
+
+; block0:
+;   sub a0, zero, a0
+;   ret
+
+
+function %neg8(i8) -> i8 {
+block0(v0: i8):
+  v1 = ineg.i8 v0
+  return v1
+}
+
+; block0:
+;   sub a0, zero, a0
+;   ret
+
+
+function %neg64(i64) -> i64 {
+block0(v0: i64):
+  v1 = ineg.i64 v0
+  return v1
+}
+
+; block0:
+;   sub a0, zero, a0
+;   subb a1, zero, a1
+;   ret
+
+
+;;;; NOT
+
+function %not32(i32) -> i32 {
+block0(v0: i32):
+  v1 = bnot.i32 v0
+  return v1
+}
+
+; block0:
+;   xor a0, a0, -1
+;   ret
+
+
+function %not16(i16) -> i16 {
+block0(v0: i16):
+  v1 = bnot.i16 v0
+  return v1
+}
+
+; block0:
+;   xor a0, a0, -1
+;   ret
+
+
+function %not8(i8) -> i8 {
+block0(v0: i8):
+  v1 = bnot.i8 v0
+  return v1
+}
+
+; block0:
+;   xor a0, a0, -1
+;   ret
+
+
+function %not64(i64) -> i64 {
+block0(v0: i64):
+  v1 = bnot.i64 v0
+  return v1
+}
+
+; block0:
+;   xor a0, a0, -1
+;   xor a1, a1, -1
+;   ret
+
+
+;;;; AND_NOT
+
+function %and_not32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = band_not.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a3, a1, -1
+;   and a0, a0, a3
+;   ret
+
+
+function %and_not16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = band_not.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a3, a1, -1
+;   and a0, a0, a3
+;   ret
+
+
+function %and_not8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = band_not.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a3, a1, -1
+;   and a0, a0, a3
+;   ret
+
+
+function %and_not64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = band_not.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a5, a2, -1
+;   and a0, a0, a5
+;   xor t1, a3, -1
+;   and a1, a1, t1
+;   ret
+
+
+;;;; OR_NOT
+
+function %or_not32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = bor_not.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a3, a1, -1
+;   or a0, a0, a3
+;   ret
+
+
+function %or_not16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = bor_not.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a3, a1, -1
+;   or a0, a0, a3
+;   ret
+
+
+function %or_not8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = bor_not.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a3, a1, -1
+;   or a0, a0, a3
+;   ret
+
+
+function %or_not64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = bor_not.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a5, a2, -1
+;   or a0, a0, a5
+;   xor t1, a3, -1
+;   or a1, a1, t1
+;   ret
+
+
+;;;; XOR_NOT
+
+function %xor_not32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = bxor_not.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a3, a1, -1
+;   xor a0, a0, a3
+;   ret
+
+
+function %xor_not16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = bxor_not.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a3, a1, -1
+;   xor a0, a0, a3
+;   ret
+
+
+function %xor_not8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = bxor_not.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a3, a1, -1
+;   xor a0, a0, a3
+;   ret
+
+
+function %xor_not64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = bxor_not.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a5, a2, -1
+;   xor a0, a0, a5
+;   xor t1, a3, -1
+;   xor a1, a1, t1
+;   ret
+
+
+;;;; ABS
+
+function %abs32(i32) -> i32 {
+block0(v0: i32):
+  v1 = iabs.i32 v0
+  return v1
+}
+
+; block0:
+;   sub a2, zero, a0
+;   cmp a0, 0
+;   mv.s.l a0, a0, a2
+;   ret
+
+
+function %abs16(i16) -> i16 {
+block0(v0: i16):
+  v1 = iabs.i16 v0
+  return v1
+}
+
+; block0:
+;   sub a2, zero, a0
+;   sext16 a4, a0
+;   cmp a4, 0
+;   mv.s.l a0, a0, a2
+;   ret
+
+
+function %abs8(i8) -> i8 {
+block0(v0: i8):
+  v1 = iabs.i8 v0
+  return v1
+}
+
+; block0:
+;   sub a2, zero, a0
+;   sext8 a4, a0
+;   cmp a4, 0
+;   mv.s.l a0, a0, a2
+;   ret
+
+
+function %abs64(i64) -> i64 {
+block0(v0: i64):
+  v1 = iabs.i64 v0
+  return v1
+}
+
+; block0:
+;   sub a3, zero, a0
+;   subb a5, zero, a1
+;   cmp a1, 0
+;   mv.s.l a0, a0, a3
+;   mv.s.l a1, a1, a5
+;   ret

@@ -71,6 +71,7 @@ x86 = []
 arm64 = []
 s390x = []
 riscv64 = []
+a32 = []
 # Stub feature that does nothing, for Cargo-features compatibility: the new
 # backend is the default now.
 experimental_x64 = []
@@ -80,7 +81,8 @@ all-arch = [
     "x86",
     "arm64",
     "s390x",
-    "riscv64"
+    "riscv64",
+    "a32"
 ]
 
 # For dependent crates that want to serialize some parts of cranelift
@@ -106,7 +108,7 @@ isle-errors = ["cranelift-isle/fancy-errors"]
 
 # Put ISLE generated files in isle_generated_code/, for easier
 # inspection, rather than inside of target/.
-isle-in-source-tree = []
+#isle-in-source-tree = []
 
 [badges]
 maintenance = { status = "experimental" }

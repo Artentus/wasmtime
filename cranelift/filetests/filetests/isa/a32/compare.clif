@@ -1,0 +1,414 @@
+test compile precise-output
+target a32
+
+;;;; CMP i32
+
+function %eq32_rhs(i32) -> i8 {
+block0(v0: i32):
+    v1 = iconst.i32 42
+    v2 = icmp.i32 eq v0, v1
+    return v2
+}
+
+; block0:
+;   cmp a0, 42
+;   mv.eq a0, zero, 1
+;   ret
+
+
+function %eq32_lhs(i32) -> i8 {
+block0(v0: i32):
+    v1 = iconst.i32 42
+    v2 = icmp.i32 eq v1, v0
+    return v2
+}
+
+; block0:
+;   cmp a0, 42
+;   mv.eq a0, zero, 1
+;   ret
+
+
+function %eq32(i32, i32) -> i8 {
+block0(v0: i32, v1: i32):
+    v2 = icmp.i32 eq v0, v1
+    return v2
+}
+
+; block0:
+;   cmp a0, a1
+;   mv.eq a0, zero, 1
+;   ret
+
+
+function %ult32_rhs(i32) -> i8 {
+block0(v0: i32):
+    v1 = iconst.i32 42
+    v2 = icmp.i32 ult v0, v1
+    return v2
+}
+
+; block0:
+;   cmp a0, 42
+;   mv.u.l a0, zero, 1
+;   ret
+
+
+function %ult32_lhs(i32) -> i8 {
+block0(v0: i32):
+    v1 = iconst.i32 42
+    v2 = icmp.i32 ult v1, v0
+    return v2
+}
+
+; block0:
+;   cmp a0, 42
+;   mv.u.g a0, zero, 1
+;   ret
+
+
+function %ult32(i32, i32) -> i8 {
+block0(v0: i32, v1: i32):
+    v2 = icmp.i32 ult v0, v1
+    return v2
+}
+
+; block0:
+;   cmp a0, a1
+;   mv.u.l a0, zero, 1
+;   ret
+
+
+function %slt32_rhs(i32) -> i8 {
+block0(v0: i32):
+    v1 = iconst.i32 42
+    v2 = icmp.i32 slt v0, v1
+    return v2
+}
+
+; block0:
+;   cmp a0, 42
+;   mv.s.l a0, zero, 1
+;   ret
+
+
+function %slt32_lhs(i32) -> i8 {
+block0(v0: i32):
+    v1 = iconst.i32 42
+    v2 = icmp.i32 slt v1, v0
+    return v2
+}
+
+; block0:
+;   cmp a0, 42
+;   mv.s.g a0, zero, 1
+;   ret
+
+
+function %slt32(i32, i32) -> i8 {
+block0(v0: i32, v1: i32):
+    v2 = icmp.i32 slt v0, v1
+    return v2
+}
+
+; block0:
+;   cmp a0, a1
+;   mv.s.l a0, zero, 1
+;   ret
+
+
+;;;; CMP i16
+
+function %eq16_rhs(i16) -> i8 {
+block0(v0: i16):
+    v1 = iconst.i16 42
+    v2 = icmp.i16 eq v0, v1
+    return v2
+}
+
+; block0:
+;   zext16 a2, a0
+;   cmp a2, 42
+;   mv.eq a0, zero, 1
+;   ret
+
+
+function %eq16_lhs(i16) -> i8 {
+block0(v0: i16):
+    v1 = iconst.i16 42
+    v2 = icmp.i16 eq v1, v0
+    return v2
+}
+
+; block0:
+;   zext16 a2, a0
+;   cmp a2, 42
+;   mv.eq a0, zero, 1
+;   ret
+
+
+function %eq16(i16, i16) -> i8 {
+block0(v0: i16, v1: i16):
+    v2 = icmp.i16 eq v0, v1
+    return v2
+}
+
+; block0:
+;   zext16 a3, a0
+;   zext16 a5, a1
+;   cmp a3, a5
+;   mv.eq a0, zero, 1
+;   ret
+
+
+function %ult16_rhs(i16) -> i8 {
+block0(v0: i16):
+    v1 = iconst.i16 42
+    v2 = icmp.i16 ult v0, v1
+    return v2
+}
+
+; block0:
+;   zext16 a2, a0
+;   cmp a2, 42
+;   mv.u.l a0, zero, 1
+;   ret
+
+
+function %ult16_lhs(i16) -> i8 {
+block0(v0: i16):
+    v1 = iconst.i16 42
+    v2 = icmp.i16 ult v1, v0
+    return v2
+}
+
+; block0:
+;   zext16 a2, a0
+;   cmp a2, 42
+;   mv.u.g a0, zero, 1
+;   ret
+
+
+function %ult16(i16, i16) -> i8 {
+block0(v0: i16, v1: i16):
+    v2 = icmp.i16 ult v0, v1
+    return v2
+}
+
+; block0:
+;   zext16 a3, a0
+;   zext16 a5, a1
+;   cmp a3, a5
+;   mv.u.l a0, zero, 1
+;   ret
+
+
+function %slt16_rhs(i16) -> i8 {
+block0(v0: i16):
+    v1 = iconst.i16 42
+    v2 = icmp.i16 slt v0, v1
+    return v2
+}
+
+; block0:
+;   sext16 a2, a0
+;   cmp a2, 42
+;   mv.s.l a0, zero, 1
+;   ret
+
+
+function %slt16_lhs(i16) -> i8 {
+block0(v0: i16):
+    v1 = iconst.i16 42
+    v2 = icmp.i16 slt v1, v0
+    return v2
+}
+
+; block0:
+;   sext16 a2, a0
+;   cmp a2, 42
+;   mv.s.g a0, zero, 1
+;   ret
+
+
+function %slt16(i16, i16) -> i8 {
+block0(v0: i16, v1: i16):
+    v2 = icmp.i16 slt v0, v1
+    return v2
+}
+
+; block0:
+;   sext16 a3, a0
+;   sext16 a5, a1
+;   cmp a3, a5
+;   mv.s.l a0, zero, 1
+;   ret
+
+
+;;;; CMP i8
+
+function %eq8_rhs(i8) -> i8 {
+block0(v0: i8):
+    v1 = iconst.i8 42
+    v2 = icmp.i8 eq v0, v1
+    return v2
+}
+
+; block0:
+;   zext8 a2, a0
+;   cmp a2, 42
+;   mv.eq a0, zero, 1
+;   ret
+
+
+function %eq8_lhs(i8) -> i8 {
+block0(v0: i8):
+    v1 = iconst.i8 42
+    v2 = icmp.i8 eq v1, v0
+    return v2
+}
+
+; block0:
+;   zext8 a2, a0
+;   cmp a2, 42
+;   mv.eq a0, zero, 1
+;   ret
+
+
+function %eq8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+    v2 = icmp.i8 eq v0, v1
+    return v2
+}
+
+; block0:
+;   zext8 a3, a0
+;   zext8 a5, a1
+;   cmp a3, a5
+;   mv.eq a0, zero, 1
+;   ret
+
+
+function %ult8_rhs(i8) -> i8 {
+block0(v0: i8):
+    v1 = iconst.i8 42
+    v2 = icmp.i8 ult v0, v1
+    return v2
+}
+
+; block0:
+;   zext8 a2, a0
+;   cmp a2, 42
+;   mv.u.l a0, zero, 1
+;   ret
+
+
+function %ult8_lhs(i8) -> i8 {
+block0(v0: i8):
+    v1 = iconst.i8 42
+    v2 = icmp.i8 ult v1, v0
+    return v2
+}
+
+; block0:
+;   zext8 a2, a0
+;   cmp a2, 42
+;   mv.u.g a0, zero, 1
+;   ret
+
+
+function %ult8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+    v2 = icmp.i8 ult v0, v1
+    return v2
+}
+
+; block0:
+;   zext8 a3, a0
+;   zext8 a5, a1
+;   cmp a3, a5
+;   mv.u.l a0, zero, 1
+;   ret
+
+
+function %slt8_rhs(i8) -> i8 {
+block0(v0: i8):
+    v1 = iconst.i8 42
+    v2 = icmp.i8 slt v0, v1
+    return v2
+}
+
+; block0:
+;   sext8 a2, a0
+;   cmp a2, 42
+;   mv.s.l a0, zero, 1
+;   ret
+
+
+function %slt8_lhs(i8) -> i8 {
+block0(v0: i8):
+    v1 = iconst.i8 42
+    v2 = icmp.i8 slt v1, v0
+    return v2
+}
+
+; block0:
+;   sext8 a2, a0
+;   cmp a2, 42
+;   mv.s.g a0, zero, 1
+;   ret
+
+
+function %slt8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+    v2 = icmp.i8 slt v0, v1
+    return v2
+}
+
+; block0:
+;   sext8 a3, a0
+;   sext8 a5, a1
+;   cmp a3, a5
+;   mv.s.l a0, zero, 1
+;   ret
+
+
+;;;; CMP i64
+
+function %eq64(i64, i64) -> i8 {
+block0(v0: i64, v1: i64):
+    v2 = icmp.i64 eq v0, v1
+    return v2
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   mv.eq a0, zero, 1
+;   ret
+
+
+function %ult64(i64, i64) -> i8 {
+block0(v0: i64, v1: i64):
+    v2 = icmp.i64 ult v0, v1
+    return v2
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   mv.u.l a0, zero, 1
+;   ret
+
+
+function %slt64(i64, i64) -> i8 {
+block0(v0: i64, v1: i64):
+    v2 = icmp.i64 slt v0, v1
+    return v2
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   mv.s.l a0, zero, 1
+;   ret

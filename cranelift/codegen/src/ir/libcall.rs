@@ -52,6 +52,43 @@ pub enum LibCall {
     /// libc.memcmp
     Memcmp,
 
+    /// Unsigned 32 bit division
+    UDiv32,
+    /// Signed 32 bit division
+    SDiv32,
+    /// Unsigned 32 bit remainder
+    URem32,
+    /// Signed 32 bit remainder
+    SRem32,
+    /// Unsigned 64 bit division
+    UDiv64,
+    /// Signed 64 bit division
+    SDiv64,
+    /// Unsigned 64 bit remainder
+    URem64,
+    /// Signed 64 bit remainder
+    SRem64,
+    /// 32 bit pop-count
+    PopCnt32,
+    /// 64 bit pop-count
+    PopCnt64,
+    /// 32 bit count leading zeros
+    Clz32,
+    /// 64 bit count leading zeros
+    Clz64,
+    /// 32 bit count trailing zeros
+    Ctz32,
+    /// 64 bit count trailing zeros
+    Ctz64,
+    /// 32 bit count leading sign bits
+    Cls32,
+    /// 64 bit count leading sign bits
+    Cls64,
+    /// 32 bit bit-reverse
+    Brev32,
+    /// 64 bit bit-reverse
+    Brev64,
+
     /// Elf __tls_get_addr
     ElfTlsGetAddr,
     /// Elf __tls_get_offset
@@ -86,6 +123,25 @@ impl FromStr for LibCall {
             "Memmove" => Ok(Self::Memmove),
             "Memcmp" => Ok(Self::Memcmp),
 
+            "UDiv32" => Ok(Self::UDiv32),
+            "SDiv32" => Ok(Self::SDiv32),
+            "URem32" => Ok(Self::URem32),
+            "SRem32" => Ok(Self::SRem32),
+            "UDiv64" => Ok(Self::UDiv64),
+            "SDiv64" => Ok(Self::SDiv64),
+            "URem64" => Ok(Self::URem64),
+            "SRem64" => Ok(Self::SRem64),
+            "PopCnt32" => Ok(Self::PopCnt32),
+            "PopCnt64" => Ok(Self::PopCnt64),
+            "Clz32" => Ok(Self::Clz32),
+            "Clz64" => Ok(Self::Clz64),
+            "Ctz32" => Ok(Self::Ctz32),
+            "Ctz64" => Ok(Self::Ctz64),
+            "Cls32" => Ok(Self::Cls32),
+            "Cls64" => Ok(Self::Cls64),
+            "Brev32" => Ok(Self::Brev32),
+            "Brev64" => Ok(Self::Brev64),
+
             "ElfTlsGetAddr" => Ok(Self::ElfTlsGetAddr),
             "ElfTlsGetOffset" => Ok(Self::ElfTlsGetOffset),
             _ => Err(()),
@@ -113,6 +169,24 @@ impl LibCall {
             Memset,
             Memmove,
             Memcmp,
+            UDiv32,
+            SDiv32,
+            URem32,
+            SRem32,
+            UDiv64,
+            SDiv64,
+            URem64,
+            SRem64,
+            PopCnt32,
+            PopCnt64,
+            Clz32,
+            Clz64,
+            Ctz32,
+            Ctz64,
+            Cls32,
+            Cls64,
+            Brev32,
+            Brev64,
             ElfTlsGetAddr,
             ElfTlsGetOffset,
         ]
@@ -139,6 +213,42 @@ impl LibCall {
                 sig.params.push(AbiParam::new(ty));
                 sig.params.push(AbiParam::new(ty));
                 sig.returns.push(AbiParam::new(ty));
+            }
+            LibCall::UDiv32 | LibCall::URem32 => {
+                sig.params.push(AbiParam::new(I32).uext());
+                sig.params.push(AbiParam::new(I32).uext());
+                sig.returns.push(AbiParam::new(I32).uext());
+            }
+            LibCall::SDiv32 | LibCall::SRem32 => {
+                sig.params.push(AbiParam::new(I32).sext());
+                sig.params.push(AbiParam::new(I32).sext());
+                sig.returns.push(AbiParam::new(I32).sext());
+            }
+            LibCall::UDiv64 | LibCall::URem64 => {
+                sig.params.push(AbiParam::new(I64).uext());
+                sig.params.push(AbiParam::new(I64).uext());
+                sig.returns.push(AbiParam::new(I64).uext());
+            }
+            LibCall::SDiv64 | LibCall::SRem64 => {
+                sig.params.push(AbiParam::new(I64).sext());
+                sig.params.push(AbiParam::new(I64).sext());
+                sig.returns.push(AbiParam::new(I64).sext());
+            }
+            LibCall::PopCnt32 | LibCall::Clz32 | LibCall::Ctz32 | LibCall::Brev32 => {
+                sig.params.push(AbiParam::new(I32).uext());
+                sig.returns.push(AbiParam::new(I32).uext());
+            }
+            LibCall::Cls32 => {
+                sig.params.push(AbiParam::new(I32).sext());
+                sig.returns.push(AbiParam::new(I32).sext());
+            }
+            LibCall::PopCnt64 | LibCall::Clz64 | LibCall::Ctz64 | LibCall::Brev64 => {
+                sig.params.push(AbiParam::new(I64).uext());
+                sig.returns.push(AbiParam::new(I64).uext());
+            }
+            LibCall::Cls64 => {
+                sig.params.push(AbiParam::new(I64).sext());
+                sig.returns.push(AbiParam::new(I64).sext());
             }
             LibCall::Probestack
             | LibCall::Memcpy

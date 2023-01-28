@@ -1,0 +1,941 @@
+(type Imm15 (primitive Imm15))
+(type Imm22 (primitive Imm22))
+(type UImm20 (primitive UImm20))
+(type AMode (primitive AMode))
+(type JumpTarget (primitive JumpTarget))
+(type CallInfo (primitive BoxCallInfo))
+(type CallIndInfo (primitive BoxCallIndInfo))
+(type VecMachLabel extern (enum))
+(type VecJumpTarget (primitive VecJumpTarget))
+
+(type AluOP (enum
+  (Add)
+  (AddC)
+  (Sub)
+  (SubB)
+  (And)
+  (Or)
+  (Xor)
+  (Shl)
+  (Lsr)
+  (Asr)
+  (Mul)
+  (MulHuu)
+  (MulHss)
+  (MulHus)
+))
+
+(type LoadOP (enum
+  (Ld32)
+  (Ld8)
+  (Ld8S)
+  (Ld16)
+  (Ld16S)
+  (In)
+))
+
+(type StoreOP (enum
+  (St32)
+  (St8)
+  (St16)
+  (Out)
+))
+
+;; Instruction formats
+(type MInst (enum
+  (Nop0)
+  (Nop4)
+  (Brk)
+  (Hlt)
+  (Err (trap_code TrapCode))
+  (Syscall)
+  (ClearKFlag)
+
+  ;; An ALU operation with two register sources
+  (AluRegReg
+    (op AluOP)
+    (rd WritableReg)
+    (rs1 Reg)
+    (rs2 Reg))
+
+  ;; An ALU operation with a register source and an immediate source
+  (AluRegImm
+    (op AluOP)
+    (rd WritableReg)
+    (rs Reg)
+    (imm Imm15))
+
+  ;; A comparison with two register sources
+  (CmpRegReg
+    (rs1 Reg)
+    (rs2 Reg))
+
+  ;; A comparison with two register sources and borrow
+  (CmpBRegReg
+    (rs1 Reg)
+    (rs2 Reg))
+
+  ;; A comparison with a register source and an immediate source
+  (CmpRegImm
+    (rs Reg)
+    (imm Imm15))
+
+    ;; A comparison with a register source and an immediate source and borrow
+  (CmpBRegImm
+    (rs Reg)
+    (imm Imm15))
+
+  ;; Adjusts the stack pointer
+  (SPAdj
+    (amount i32))
+
+  ;; A memory load
+  (Load
+    (op LoadOP)
+    (rd WritableReg)
+    (mode AMode))
+
+  ;; A memory store
+  (Store
+    (op StoreOP)
+    (rs Reg)
+    (mode AMode))
+
+  ;; An absolute jump
+  (Jump
+    (link WritableReg)
+    (base Reg)
+    (offset Imm15))
+
+  ;; An unconditional move with an upper immediate source
+  (LoadUImm
+    (rd WritableReg)
+    (uimm UImm20))
+
+  ;; An ADD between PC and an upper immediate source
+  (AddPcUImm
+    (rd WritableReg)
+    (uimm UImm20))
+
+  ;; A PC-relative branch
+  (Branch
+    (cc IntCC)
+    (taken JumpTarget)
+    (not_taken JumpTarget))
+
+  ;; A PC-relative jump
+  (JumpRel
+    (target JumpTarget))
+
+  ;; A conditional move with two register sources
+  (CondMoveRegReg
+    (cc IntCC)
+    (rd WritableReg)
+    (rs1 Reg)
+    (rs2 Reg))
+
+  ;; An unconditional move with a register source
+  (Move
+    (rd WritableReg)
+    (rs Reg))
+
+  ;; A MOV instruction, but where the source register is a non-allocatable
+  ;; PReg. It's important that the register be non-allocatable, as regalloc2
+  ;; will not see it as used.
+  (MoveFromPReg
+    (rd WritableReg)
+    (rs PReg))
+
+  ;; A conditional move with a register source and an immediate source
+  (CondMoveRegImm
+    (cc IntCC)
+    (rd WritableReg)
+    (rs Reg)
+    (imm Imm15))
+
+  ;; An unconditional move with an immediate source
+  (LoadImm
+    (rd WritableReg)
+    (imm Imm15))
+
+
+  ;;;; Pseudo-instructions required by Cranelift ;;;;
+
+  ;; A pseudo-instruction that captures register arguments in vregs
+  (Args
+    (args VecArgPair))
+
+  ;; A pseudo-instruction that keeps a value alive
+  (DummyUse
+    (reg Reg))
+
+  ;; A pseudo-instruction that returns from a function
+  (Ret
+    (rets VecRetPair))
+
+  (Extend
+    (rd WritableReg)
+    (rs Reg)
+    (signed bool)
+    (from_bits u8)
+    (to_bits u8))
+
+  (Call
+    (info CallInfo))
+
+  (CallInd
+    (info CallIndInfo))
+
+  ;; Loads an inline symbol reference
+  (LoadExtName
+    (rd WritableReg)
+    (name BoxExternalName)
+    (offset i64))
+
+  ;; Marker, no-op in generated code: nominal SP is adjusted. This
+  ;; controls how AMode::NominalSPOffset args are lowered.
+  (NominalSPAdj
+    (amount i32))
+
+  ;; Load address referenced by `mode`
+  (LoadAddr
+    (rd WritableReg)
+    (mode AMode))
+
+  (JumpTable
+    (index Reg)
+    (tmp WritableReg)
+    (targets VecJumpTarget))
+
+
+;;    ;; select x or y base on condition
+;;    (Select
+;;      (dst VecWritableReg)
+;;      (ty Type)
+;;      (condition Reg)
+;;      (x ValueRegs)
+;;      (y ValueRegs))
+;;
+
+;;
+;;    ;; select a reg base on condition.
+;;    ;; very useful because in lowering stage we can not have condition branch.
+;;    (SelectReg
+;;      (rd WritableReg)
+;;      (rs1 Reg)
+;;      (rs2 Reg)
+;;      (condition IntegerCompare))
+;;    ;;
+;;    
+;;    (SelectIf
+;;      (if_spectre_guard bool)
+;;      (rd VecWritableReg)
+;;      (test Reg)
+;;      (x ValueRegs)
+;;      (y ValueRegs))
+;;    (RawData (data VecU8))
+;;
+))
+
+
+;;;; Helpers for emitting calls ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(decl gen_call (SigRef ExternalName RelocDistance ValueSlice) InstOutput)
+(extern constructor gen_call gen_call)
+
+(decl gen_call_indirect (SigRef Value ValueSlice) InstOutput)
+(extern constructor gen_call_indirect gen_call_indirect)
+
+
+;;;; Helpers for physical registers ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Helper for creating the zero register.
+(decl zero_reg () Reg)
+(extern constructor zero_reg zero_reg)
+(decl zero_reg_w () WritableReg)
+(extern constructor zero_reg_w zero_reg_w)
+
+(decl gen_move_from_preg (PReg) Reg)
+(rule
+  (gen_move_from_preg rs)
+  (let ((rd WritableReg (temp_writable_reg $I32))
+        (_ Unit (emit (MInst.MoveFromPReg rd rs))))
+    rd))
+
+(decl ra_reg () PReg)
+(extern constructor ra_reg ra_reg)
+(decl sp_reg () PReg)
+(extern constructor sp_reg sp_reg)
+(decl fp_reg () PReg)
+(extern constructor fp_reg fp_reg)
+
+
+;;;; Helpers for creating immediates ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Helper for creating Imm15 constants.
+(decl imm15 (i16) Imm15)
+(extern constructor imm15 imm15)
+
+;; Helper to go directly from a `Value`, when it's an `iconst`, to an `Imm15`.
+(decl imm15_from_u64 (Imm15) u64)
+(extern extractor imm15_from_u64 imm15_from_u64)
+(decl imm15_from_value (Imm15) Value)
+(extractor
+  (imm15_from_value n)
+  (def_inst (iconst (u64_from_imm64 (imm15_from_u64 n)))))
+
+;; Helper to go directly from a `Value`, when it's an `iconst`, to an `Imm15` truncated to a 32 bit shift amount.
+(decl shamt32_from_u64 (Imm15) u64)
+(extern extractor shamt32_from_u64 shamt32_from_u64)
+(decl shamt32_from_value (Imm15) Value)
+(extractor
+  (shamt32_from_value n)
+  (def_inst (iconst (u64_from_imm64 (shamt32_from_u64 n)))))
+
+;; Helper to go directly from a `Value`, when it's an `iconst`, to an `Imm15` truncated to a 16 bit shift amount.
+(decl shamt16_from_u64 (Imm15) u64)
+(extern extractor shamt16_from_u64 shamt16_from_u64)
+(decl shamt16_from_value (Imm15) Value)
+(extractor
+  (shamt16_from_value n)
+  (def_inst (iconst (u64_from_imm64 (shamt16_from_u64 n)))))
+
+;; Helper to go directly from a `Value`, when it's an `iconst`, to an `Imm15` truncated to an 8 bit shift amount.
+(decl shamt8_from_u64 (Imm15) u64)
+(extern extractor shamt8_from_u64 shamt8_from_u64)
+(decl shamt8_from_value (Imm15) Value)
+(extractor
+  (shamt8_from_value n)
+  (def_inst (iconst (u64_from_imm64 (shamt8_from_u64 n)))))
+
+;; Load immediate
+(decl load_imm32 (Type u64) Reg)
+(extern constructor load_imm32 load_imm32)
+
+(decl load_imm64 (u64) ValueRegs)
+(extern constructor load_imm64 load_imm64)
+
+;; Mask shift amount
+(decl mask_shamt (Type Reg) Reg)
+(extern constructor mask_shamt mask_shamt)
+
+
+;;;; Misc helpers ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; AMode from reg + offset
+(decl build_amode (Reg Offset32) AMode)
+(extern constructor build_amode build_amode)
+
+;; Add to an offset
+(decl add_offset (Offset32 i32) Offset32)
+(extern constructor add_offset add_offset)
+
+(decl is_signed_cc (IntCC) bool)
+(extern constructor is_signed_cc is_signed_cc)
+
+(decl jump_target (VecMachLabel u8) JumpTarget)
+(extern constructor jump_target jump_target)
+
+(decl gen_stack_addr (StackSlot Offset32) Reg)
+(extern constructor gen_stack_addr gen_stack_addr)
+
+
+;;;; Helpers for emitting instructions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Helper for emitting `MInst.AluRegReg` instructions.
+(decl alu_reg_reg (AluOP Reg Reg) Reg)
+(rule (alu_reg_reg op rs1 rs2)
+  (let
+    ((rd WritableReg (temp_writable_reg $I32))
+      (_ Unit (emit (MInst.AluRegReg op rd rs1 rs2))))
+    rd))
+
+;; Helper for emitting `MInst.AluRegImm` instructions.
+(decl alu_reg_imm (AluOP Reg Imm15) Reg)
+(rule (alu_reg_imm op rs imm)
+  (let
+    ((rd WritableReg (temp_writable_reg $I32))
+    (_ Unit (emit (MInst.AluRegImm op rd rs imm))))
+  rd))
+
+;; Helper for emitting `MInst.CmpRegReg` instructions.
+(decl cmp_reg_reg (Reg Reg) Unit)
+(rule (cmp_reg_reg rs1 rs2)
+  (emit (MInst.CmpRegReg rs1 rs2)))
+
+;; Helper for emitting `MInst.CmpBRegReg` instructions.
+(decl cmpb_reg_reg (Reg Reg) Unit)
+(rule (cmpb_reg_reg rs1 rs2)
+  (emit (MInst.CmpBRegReg rs1 rs2)))
+
+;; Helper for emitting `MInst.CmpRegImm` instructions.
+(decl cmp_reg_imm (Reg Imm15) Unit)
+(rule (cmp_reg_imm rs imm)
+  (emit (MInst.CmpRegImm rs imm)))
+
+;; Helper for emitting `MInst.CmpBRegImm` instructions.
+(decl cmpb_reg_imm (Reg Imm15) Unit)
+(rule (cmpb_reg_imm rs imm)
+  (emit (MInst.CmpBRegImm rs imm)))
+
+;; Helper for emitting `MInst.Move` instructions.
+(decl move_reg (Reg) Reg)
+(rule (move_reg rs)
+  (let
+    ((rd WritableReg (temp_writable_reg $I32))
+      (_ Unit (emit (MInst.Move rd rs))))
+    rd))
+
+;; Helper for emitting `MInst.LoadImm` instructions.
+(decl load_imm (Imm15) Reg)
+(rule (load_imm imm)
+  (let
+    ((rd WritableReg (temp_writable_reg $I32))
+      (_ Unit (emit (MInst.LoadImm rd imm))))
+    rd))
+
+;; Helper for emitting `MInst.CondMoveRegReg` instructions.
+(decl cond_move_reg_reg (IntCC Reg Reg) Reg)
+(rule (cond_move_reg_reg cc rs1 rs2)
+  (let
+    ((rd WritableReg (temp_writable_reg $I32))
+      (_ Unit (emit (MInst.CondMoveRegReg cc rd rs1 rs2))))
+    rd))
+
+;; Helper for emitting `MInst.CondMoveRegImm` instructions.
+(decl cond_move_reg_imm (IntCC Reg Imm15) Reg)
+(rule (cond_move_reg_imm cc rs imm)
+  (let
+    ((rd WritableReg (temp_writable_reg $I32))
+      (_ Unit (emit (MInst.CondMoveRegImm cc rd rs imm))))
+    rd))
+
+;; Helper for emitting `MInst.Load` instructions.
+(decl load_reg_imm (LoadOP Reg Offset32) Reg)
+(rule (load_reg_imm op base offset)
+  (let
+    ((rd WritableReg (temp_writable_reg $I32))
+      (_ Unit (emit (MInst.Load op rd (build_amode base offset)))))
+    rd))
+
+;; Helper for emitting `MInst.Store` instructions.
+(decl store_reg_imm (StoreOP Reg Reg Offset32) InstOutput)
+(rule (store_reg_imm op rs base offset)
+  (side_effect (SideEffectNoResult.Inst (MInst.Store op rs (build_amode base offset)))))
+
+;; Helper for emitting `MInst.Branch` instructions.
+(decl branch_rel (IntCC JumpTarget JumpTarget) Unit)
+(rule (branch_rel cc taken not_taken)
+  (emit_side_effect (SideEffectNoResult.Inst (MInst.Branch cc taken not_taken))))
+
+;; Helper for emitting `MInst.JumpRel` instructions.
+(decl jump_rel (JumpTarget) Unit)
+(rule (jump_rel target)
+  (emit_side_effect (SideEffectNoResult.Inst (MInst.JumpRel target))))
+
+
+;;;; Helpers for type extension ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(decl gen_extend (Reg bool u8 u8) Reg)
+(rule
+  (gen_extend r is_signed from_bits to_bits)
+  (let
+    ((tmp WritableReg (temp_writable_reg $I32))
+      (_ Unit (emit (MInst.Extend tmp r is_signed from_bits to_bits))))
+    tmp))
+
+(decl lower_extend (Reg bool u8 u8) Reg)
+(rule (lower_extend r is_signed from_bits to_bits)
+  (gen_extend r is_signed from_bits to_bits))
+
+;; extend to 32 bit if needed
+(decl ext_to_32 (bool Reg Type) Reg)
+;;; for I8 and I16
+(rule -1 (ext_to_32 signed val ty)
+  (gen_extend val signed (ty_bits ty) 32))
+;;; no need to extend
+(rule (ext_to_32 _ r $I32) r)
+
+
+;;;; Helpers for emitting 64 bit shifts ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(decl mask_shamt_64 (Reg) Reg)
+(rule
+  (mask_shamt_64 shamt)
+  (let
+    ((shamt6 WritableReg (temp_writable_reg $I32))
+    (_ Unit (emit (MInst.AluRegImm (AluOP.And) shamt6 shamt (imm15 0x3F))))) shamt6))
+
+(decl lower_i64_ishl (ValueRegs ValueRegs) ValueRegs)
+(rule
+  (lower_i64_ishl x y)
+  (let
+    ( ;; mask shift amount
+      (shamt6 Reg (mask_shamt_64 (value_regs_get y 0)))
+      ;; opposite shift amount
+      (bit_count Reg (load_imm32 $I32 64))
+      (opp_shamt6 Reg (alu_reg_reg (AluOP.Sub) bit_count shamt6))
+      ;; low word
+      (low Reg (alu_reg_reg (AluOP.Shl) (value_regs_get x 0) shamt6))
+      ;; high word
+      (high1 Reg (alu_reg_reg (AluOP.Lsr) (value_regs_get x 0) opp_shamt6))
+      (high2 Reg (alu_reg_reg (AluOP.Shl) (value_regs_get x 1) shamt6))
+      (high Reg (alu_reg_reg (AluOP.Or) high1 high2))
+      ;; select permutation
+      (_ Unit (cmp_reg_imm shamt6 (imm15 32)))
+      (low_perm Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThanOrEqual) low (zero_reg)))
+      (high_perm Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThanOrEqual) high low))
+      ;; handle shamt == 0
+      (_ Unit (cmp_reg_reg shamt6 (zero_reg)))
+      (low_z Reg (cond_move_reg_reg (IntCC.Equal) low_perm (value_regs_get x 0)))
+      (high_z Reg (cond_move_reg_reg (IntCC.Equal) high_perm (value_regs_get x 1))))
+    (value_regs low_z high_z)))
+
+(decl lower_i64_ushr (ValueRegs ValueRegs) ValueRegs)
+(rule
+  (lower_i64_ushr x y)
+  (let
+    ( ;; mask shift amount
+      (shamt6 Reg (mask_shamt_64 (value_regs_get y 0)))
+      ;; opposite shift amount
+      (bit_count Reg (load_imm32 $I32 64))
+      (opp_shamt6 Reg (alu_reg_reg (AluOP.Sub) bit_count shamt6))
+      ;; high word
+      (high Reg (alu_reg_reg (AluOP.Lsr) (value_regs_get x 1) shamt6))
+      ;; low word
+      (low1 Reg (alu_reg_reg (AluOP.Shl) (value_regs_get x 1) opp_shamt6))
+      (low2 Reg (alu_reg_reg (AluOP.Lsr) (value_regs_get x 0) shamt6))
+      (low Reg (alu_reg_reg (AluOP.Or) low1 low2))
+      ;; select permutation
+      (_ Unit (cmp_reg_imm shamt6 (imm15 32)))
+      (high_perm Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThanOrEqual) high (zero_reg)))
+      (low_perm Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThanOrEqual) low high))
+      ;; handle shamt == 0
+      (_ Unit (cmp_reg_reg shamt6 (zero_reg)))
+      (high_z Reg (cond_move_reg_reg (IntCC.Equal) high_perm (value_regs_get x 1)))
+      (low_z Reg (cond_move_reg_reg (IntCC.Equal) low_perm (value_regs_get x 0))))
+    (value_regs low_z high_z)))
+
+(decl lower_i64_sshr (ValueRegs ValueRegs) ValueRegs)
+(rule
+  (lower_i64_sshr x y)
+  (let
+    ( ;; mask shift amount
+      (shamt6 Reg (mask_shamt_64 (value_regs_get y 0)))
+      ;; opposite shift amount
+      (bit_count Reg (load_imm32 $I32 64))
+      (opp_shamt6 Reg (alu_reg_reg (AluOP.Sub) bit_count shamt6))
+      ;; high word
+      (high Reg (alu_reg_reg (AluOP.Asr) (value_regs_get x 1) shamt6))
+      ;; low word
+      (low1 Reg (alu_reg_reg (AluOP.Shl) (value_regs_get x 1) opp_shamt6))
+      (low2 Reg (alu_reg_reg (AluOP.Asr) (value_regs_get x 0) shamt6))
+      (low Reg (alu_reg_reg (AluOP.Or) low1 low2))
+      ;; sign extended high bits
+      (_ Unit (cmp_reg_reg (value_regs_get x 1) (zero_reg)))
+      (high_bits Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1)))
+      ;; select permutation
+      (_ Unit (cmp_reg_imm shamt6 (imm15 32)))
+      (high_perm Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThanOrEqual) high high_bits))
+      (low_perm Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThanOrEqual) low high))
+      ;; handle shamt == 0
+      (_ Unit (cmp_reg_reg shamt6 (zero_reg)))
+      (high_z Reg (cond_move_reg_reg (IntCC.Equal) high_perm (value_regs_get x 1)))
+      (low_z Reg (cond_move_reg_reg (IntCC.Equal) low_perm (value_regs_get x 0))))
+    (value_regs low_z high_z)))
+
+
+;;;; Helpers for emitting 64 bit multiply ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(decl long_mul_uu (Reg Reg) ValueRegs)
+(rule (long_mul_uu x y)
+  (let
+    ((low Reg (alu_reg_reg (AluOP.Mul) x y))
+      (high Reg (alu_reg_reg (AluOP.MulHuu) x y)))
+    (value_regs low high)))
+
+(decl long_mul_ss (Reg Reg) ValueRegs)
+(rule (long_mul_ss x y)
+  (let
+    ((low Reg (alu_reg_reg (AluOP.Mul) x y))
+      (high Reg (alu_reg_reg (AluOP.MulHss) x y)))
+    (value_regs low high)))
+
+(decl long_mul_us (Reg Reg) ValueRegs)
+(rule (long_mul_us x y)
+  (let
+    ((low Reg (alu_reg_reg (AluOP.Mul) x y))
+      (high Reg (alu_reg_reg (AluOP.MulHus) x y)))
+    (value_regs low high)))
+
+(decl lower_i64_imul (ValueRegs ValueRegs) ValueRegs)
+(rule
+  (lower_i64_imul x y)
+  (let
+    ( ;; low * low
+      (low_low ValueRegs (long_mul_uu (value_regs_get x 0) (value_regs_get y 0)))
+      ;; low * high
+      (low_high Reg (alu_reg_reg (AluOP.Mul) (value_regs_get x 0) (value_regs_get y 1)))
+      ;; high * low
+      (high_low Reg (alu_reg_reg (AluOP.Mul) (value_regs_get x 1) (value_regs_get y 0)))
+      ;; add up products
+      (high1 Reg (alu_reg_reg (AluOP.Add) (value_regs_get low_low 1) low_high))
+      (high2 Reg (alu_reg_reg (AluOP.Add) high1 high_low)))
+    (value_regs (value_regs_get low_low 0) high2)))
+
+(decl lower_i64_umulhi (ValueRegs ValueRegs) ValueRegs)
+(rule
+  (lower_i64_umulhi x y)
+  (let
+    ( ;; low * low
+      (low_low Reg (alu_reg_reg (AluOP.MulHuu) (value_regs_get x 0) (value_regs_get y 0)))
+      ;; high * high
+      (high_high ValueRegs (long_mul_uu (value_regs_get x 1) (value_regs_get y 1)))
+      ;; low * high
+      (low_high ValueRegs (long_mul_uu (value_regs_get x 0) (value_regs_get y 1)))
+      ;; high * low
+      (high_low ValueRegs (long_mul_uu (value_regs_get x 1) (value_regs_get y 0)))
+      ;; let wn_1 = low_low + low_high
+      (w1_1 Reg (alu_reg_reg (AluOP.Add) low_low (value_regs_get low_high 0)))
+      (w2_1 Reg (alu_reg_reg (AluOP.AddC) (zero_reg) (value_regs_get low_high 1)))
+      (w3_1 Reg (alu_reg_reg (AluOP.AddC) (zero_reg) (zero_reg)))
+      ;; let wn_2 = wn_1 + high_low
+      (w1_2 Reg (alu_reg_reg (AluOP.Add) w1_1 (value_regs_get high_low 0)))
+      (w2_2 Reg (alu_reg_reg (AluOP.AddC) w2_1 (value_regs_get high_low 1)))
+      (w3_2 Reg (alu_reg_reg (AluOP.AddC) w3_1 (zero_reg)))
+      ;; let wn_3 = wn_2 + high_high
+      (w2_3 Reg (alu_reg_reg (AluOP.Add) w2_2 (value_regs_get high_high 0)))
+      (w3_3 Reg (alu_reg_reg (AluOP.AddC) w3_2 (value_regs_get high_high 1))))
+    (value_regs w2_3 w3_3)))
+
+(decl lower_i64_smulhi (ValueRegs ValueRegs) ValueRegs)
+(rule
+  (lower_i64_smulhi x y)
+  (let
+    ( ;; low * low
+      (low_low Reg (alu_reg_reg (AluOP.MulHuu) (value_regs_get x 0) (value_regs_get y 0)))
+      ;; high * high
+      (high_high ValueRegs (long_mul_ss (value_regs_get x 1) (value_regs_get y 1)))
+      ;; low * high
+      (low_high ValueRegs (long_mul_us (value_regs_get x 0) (value_regs_get y 1)))
+      ;; high * low
+      (high_low ValueRegs (long_mul_us (value_regs_get y 0) (value_regs_get x 1)))
+      ;; let wn_1 = low_low + low_high
+      (w1_1 Reg (alu_reg_reg (AluOP.Add) low_low (value_regs_get low_high 0)))
+      (w2_1 Reg (alu_reg_reg (AluOP.AddC) (zero_reg) (value_regs_get low_high 1)))
+      (w3_1 Reg (alu_reg_reg (AluOP.AddC) (zero_reg) (zero_reg)))
+      ;; let wn_2 = wn_1 + high_low
+      (w1_2 Reg (alu_reg_reg (AluOP.Add) w1_1 (value_regs_get high_low 0)))
+      (w2_2 Reg (alu_reg_reg (AluOP.AddC) w2_1 (value_regs_get high_low 1)))
+      (w3_2 Reg (alu_reg_reg (AluOP.AddC) w3_1 (zero_reg)))
+      ;; let wn_3 = wn_2 + high_high
+      (w2_3 Reg (alu_reg_reg (AluOP.Add) w2_2 (value_regs_get high_high 0)))
+      (w3_3 Reg (alu_reg_reg (AluOP.AddC) w3_2 (value_regs_get high_high 1))))
+    (value_regs w2_3 w3_3)))
+
+
+;;;; Helpers for emitting pseudo instructions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; -x
+(decl alu_reg_neg (Reg) Reg)
+(rule (alu_reg_neg x)
+  (alu_reg_reg (AluOP.Sub) (zero_reg) x))
+
+;; -x (with borrow)
+(decl alu_reg_negb (Reg) Reg)
+(rule (alu_reg_negb x)
+  (alu_reg_reg (AluOP.SubB) (zero_reg) x))
+
+;; ~x
+(decl alu_reg_not (Reg) Reg)
+(rule (alu_reg_not x)
+  (alu_reg_imm (AluOP.Xor) x (imm15 -1)))
+
+
+;;;; Helpers for emitting combined operations ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; x & ~y
+(decl lower_and_not (Reg Reg) Reg)
+(rule (lower_and_not x y)
+  (let
+    ((tmp Reg (alu_reg_not y)))
+    (alu_reg_reg (AluOP.And) x tmp)))
+
+;; x | ~y
+(decl lower_or_not (Reg Reg) Reg)
+(rule (lower_or_not x y)
+  (let
+    ((tmp Reg (alu_reg_not y)))
+    (alu_reg_reg (AluOP.Or) x tmp)))
+
+;; x ^ ~y
+(decl lower_xor_not (Reg Reg) Reg)
+(rule (lower_xor_not x y)
+  (let
+    ((tmp Reg (alu_reg_not y)))
+    (alu_reg_reg (AluOP.Xor) x tmp)))
+
+
+;;;; Helper for loading extern symbols ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(decl load_ext_name (ExternalName i64) Reg)
+(extern constructor load_ext_name load_ext_name)
+
+
+;;;; Helpers for emitting LibCalls ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(type LibCall extern
+  (enum
+    UDiv32
+    SDiv32
+    URem32
+    SRem32
+    UDiv64
+    SDiv64
+    URem64
+    SRem64
+    PopCnt32
+    PopCnt64
+    Clz32
+    Clz64
+    Ctz32
+    Ctz64
+    Cls32
+    Cls64
+    Brev32
+    Brev64))
+
+(decl libcall32_1 (LibCall Reg) Reg)
+(extern constructor libcall32_1 libcall32_1)
+
+(decl libcall64_1 (LibCall ValueRegs) ValueRegs)
+(extern constructor libcall64_1 libcall64_1)
+
+(decl libcall32_2 (LibCall Reg Reg) Reg)
+(extern constructor libcall32_2 libcall32_2)
+
+(decl libcall64_2 (LibCall ValueRegs ValueRegs) ValueRegs)
+(extern constructor libcall64_2 libcall64_2)
+
+
+;;;; Helpers for emitting a jump table ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(decl lower_jump_table (ValueRegs VecMachLabel) Unit)
+(extern constructor lower_jump_table lower_jump_table)
+
+
+;;;; Helpers for bmask ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(decl lower_bmask (Type Type ValueRegs) ValueRegs)
+
+;; Produces -1 if the 32-bit value is non-zero, and 0 otherwise.
+;; If the type is smaller than 32 bits, we need to mask off the
+;; high bits.
+(rule
+  (lower_bmask (fits_in_32 out_ty) (fits_in_32 in_ty) x)
+  (let
+    ( ;; extend
+      (x_ext Reg (ext_to_32 $false (value_regs_get x 0) in_ty))
+      ;; compare to 0
+      (_ Unit (cmp_reg_imm x_ext (imm15 0)))
+      ;; select between all 0s and all 1s
+      (mask Reg (cond_move_reg_imm (IntCC.NotEqual) (zero_reg) (imm15 -1)))
+      ;; truncate mask to correct type
+      (mask_ext Reg (ext_to_32 $false mask out_ty)))
+    (value_reg mask_ext)))
+
+;; Bitwise-or the two registers that make up the 64-bit value, then recurse as
+;; though it was a 32-bit value.
+(rule 1
+  (lower_bmask (fits_in_32 out_ty) $I64 x)
+  (let
+    ((combined Reg (alu_reg_reg (AluOP.Or) (value_regs_get x 0) (value_regs_get x 1))))
+    (lower_bmask out_ty $I32 (value_reg combined))))
+
+;; Conversion of one 32-bit value to a 64-bit one. Duplicate the result of the
+;; bmask of the 32-bit value into both result registers of the i64.
+(rule 2
+  (lower_bmask $I64 (fits_in_32 in_ty) x)
+  (let ((mask ValueRegs (lower_bmask $I32 in_ty x)))
+    (value_regs (value_regs_get mask 0) (value_regs_get mask 0))))
+
+;; Conversion of one 32-bit value to a 64-bit one. Duplicate the result of
+;; bmasking the 64-bit value to a 32-bit value into both registers of the
+;; 64-bit result.
+(rule 3
+  (lower_bmask $I64 $I64 val)
+  (let ((mask ValueRegs (lower_bmask $I32 $I64 val)))
+    (value_regs (value_regs_get mask 0) (value_regs_get mask 0))))
+
+
+;;;; Helpers for emitting rotating shifts ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(decl lower_i8_rotl (Reg Reg) Reg)
+(rule
+  (lower_i8_rotl x y)
+  (let
+    ( ;; extend to 32 bit
+      (x_ext Reg (ext_to_32 $false x $I8))
+      ;; shift amount
+      (shamt Reg (alu_reg_imm (AluOP.And) y (imm15 0x7)))
+      ;; opposite shift amount
+      (bit_count Reg (load_imm (imm15 8)))
+      (opp_shamt Reg (alu_reg_reg (AluOP.Sub) bit_count shamt))
+      ;; perfom shifts
+      (left Reg (alu_reg_reg (AluOP.Shl) x shamt))
+      (right Reg (alu_reg_reg (AluOP.Lsr) x opp_shamt))
+      ;; combine
+      (comb Reg (alu_reg_reg (AluOP.Or) left right))
+      ;; check for shift by 0
+      (_ Unit (cmp_reg_imm shamt (imm15 0))))
+    (cond_move_reg_reg (IntCC.Equal) comb left)))
+
+(decl lower_i8_rotr (Reg Reg) Reg)
+(rule
+  (lower_i8_rotr x y)
+  (let
+    ( ;; extend to 32 bit
+      (x_ext Reg (ext_to_32 $false x $I8))
+      ;; shift amount
+      (shamt Reg (alu_reg_imm (AluOP.And) y (imm15 0x7)))
+      ;; opposite shift amount
+      (bit_count Reg (load_imm (imm15 8)))
+      (opp_shamt Reg (alu_reg_reg (AluOP.Sub) bit_count shamt))
+      ;; perfom shifts
+      (right Reg (alu_reg_reg (AluOP.Lsr) x shamt))
+      (left Reg (alu_reg_reg (AluOP.Shl) x opp_shamt))
+      ;; combine
+      (comb Reg (alu_reg_reg (AluOP.Or) right left))
+      ;; check for shift by 0
+      (_ Unit (cmp_reg_imm shamt (imm15 0))))
+    (cond_move_reg_reg (IntCC.Equal) comb right)))
+
+(decl lower_i16_rotl (Reg Reg) Reg)
+(rule
+  (lower_i16_rotl x y)
+  (let
+    ( ;; extend to 32 bit
+      (x_ext Reg (ext_to_32 $false x $I16))
+      ;; shift amount
+      (shamt Reg (alu_reg_imm (AluOP.And) y (imm15 0xF)))
+      ;; opposite shift amount
+      (bit_count Reg (load_imm (imm15 16)))
+      (opp_shamt Reg (alu_reg_reg (AluOP.Sub) bit_count shamt))
+      ;; perfom shifts
+      (left Reg (alu_reg_reg (AluOP.Shl) x shamt))
+      (right Reg (alu_reg_reg (AluOP.Lsr) x opp_shamt))
+      ;; combine
+      (comb Reg (alu_reg_reg (AluOP.Or) left right))
+      ;; check for shift by 0
+      (_ Unit (cmp_reg_imm shamt (imm15 0))))
+    (cond_move_reg_reg (IntCC.Equal) comb left)))
+
+(decl lower_i16_rotr (Reg Reg) Reg)
+(rule
+  (lower_i16_rotr x y)
+  (let
+    ( ;; extend to 32 bit
+      (x_ext Reg (ext_to_32 $false x $I16))
+      ;; shift amount
+      (shamt Reg (alu_reg_imm (AluOP.And) y (imm15 0xF)))
+      ;; opposite shift amount
+      (bit_count Reg (load_imm (imm15 16)))
+      (opp_shamt Reg (alu_reg_reg (AluOP.Sub) bit_count shamt))
+      ;; perfom shifts
+      (right Reg (alu_reg_reg (AluOP.Lsr) x shamt))
+      (left Reg (alu_reg_reg (AluOP.Shl) x opp_shamt))
+      ;; combine
+      (comb Reg (alu_reg_reg (AluOP.Or) right left))
+      ;; check for shift by 0
+      (_ Unit (cmp_reg_imm shamt (imm15 0))))
+    (cond_move_reg_reg (IntCC.Equal) comb right)))
+
+(decl lower_i32_rotl (Reg Reg) Reg)
+(rule
+  (lower_i32_rotl x y)
+  (let
+    ( ;; shift amount
+      (shamt Reg (alu_reg_imm (AluOP.And) y (imm15 0x1F)))
+      ;; opposite shift amount
+      (bit_count Reg (load_imm (imm15 32)))
+      (opp_shamt Reg (alu_reg_reg (AluOP.Sub) bit_count shamt))
+      ;; perfom shifts
+      (left Reg (alu_reg_reg (AluOP.Shl) x shamt))
+      (right Reg (alu_reg_reg (AluOP.Lsr) x opp_shamt))
+      ;; combine
+      (comb Reg (alu_reg_reg (AluOP.Or) left right))
+      ;; check for shift by 0
+      (_ Unit (cmp_reg_imm shamt (imm15 0))))
+    (cond_move_reg_reg (IntCC.Equal) comb left)))
+
+(decl lower_i32_rotr (Reg Reg) Reg)
+(rule
+  (lower_i32_rotr x y)
+  (let
+    ( ;; shift amount
+      (shamt Reg (alu_reg_imm (AluOP.And) y (imm15 0x1F)))
+      ;; opposite shift amount
+      (bit_count Reg (load_imm (imm15 32)))
+      (opp_shamt Reg (alu_reg_reg (AluOP.Sub) bit_count shamt))
+      ;; perfom shifts
+      (right Reg (alu_reg_reg (AluOP.Lsr) x shamt))
+      (left Reg (alu_reg_reg (AluOP.Shl) x opp_shamt))
+      ;; combine
+      (comb Reg (alu_reg_reg (AluOP.Or) right left))
+      ;; check for shift by 0
+      (_ Unit (cmp_reg_imm shamt (imm15 0))))
+    (cond_move_reg_reg (IntCC.Equal) comb right)))
+
+(decl lower_i64_rotl (ValueRegs ValueRegs) ValueRegs)
+(rule
+  (lower_i64_rotl x y)
+  (let
+    ( ;; mask shift amount
+      (shamt6 Reg (mask_shamt_64 (value_regs_get y 0)))
+      ;; opposite shift amount
+      (bit_count Reg (load_imm32 $I32 64))
+      (opp_shamt6 Reg (alu_reg_reg (AluOP.Sub) bit_count shamt6))
+      ;; low word
+      (low1 Reg (alu_reg_reg (AluOP.Lsr) (value_regs_get x 1) opp_shamt6))
+      (low2 Reg (alu_reg_reg (AluOP.Shl) (value_regs_get x 0) shamt6))
+      (low Reg (alu_reg_reg (AluOP.Or) low1 low2))
+      ;; high word
+      (high1 Reg (alu_reg_reg (AluOP.Lsr) (value_regs_get x 0) opp_shamt6))
+      (high2 Reg (alu_reg_reg (AluOP.Shl) (value_regs_get x 1) shamt6))
+      (high Reg (alu_reg_reg (AluOP.Or) high1 high2))
+      ;; select permutation
+      (_ Unit (cmp_reg_imm shamt6 (imm15 32)))
+      (low_perm Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThanOrEqual) low high))
+      (high_perm Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThanOrEqual) high low))
+      ;; handle shamt == 0
+      (_ Unit (cmp_reg_reg shamt6 (zero_reg)))
+      (low_z Reg (cond_move_reg_reg (IntCC.Equal) low_perm (value_regs_get x 0)))
+      (high_z Reg (cond_move_reg_reg (IntCC.Equal) high_perm (value_regs_get x 1))))
+    (value_regs low_z high_z)))
+
+(decl lower_i64_rotr (ValueRegs ValueRegs) ValueRegs)
+(rule
+  (lower_i64_rotr x y)
+  (let
+    ( ;; mask shift amount
+      (shamt6 Reg (mask_shamt_64 (value_regs_get y 0)))
+      ;; opposite shift amount
+      (bit_count Reg (load_imm32 $I32 64))
+      (opp_shamt6 Reg (alu_reg_reg (AluOP.Sub) bit_count shamt6))
+      ;; high word
+      (high1 Reg (alu_reg_reg (AluOP.Shl) (value_regs_get x 0) opp_shamt6))
+      (high2 Reg (alu_reg_reg (AluOP.Lsr) (value_regs_get x 1) shamt6))
+      (high Reg (alu_reg_reg (AluOP.Or) high1 high2))
+      ;; low word
+      (low1 Reg (alu_reg_reg (AluOP.Shl) (value_regs_get x 1) opp_shamt6))
+      (low2 Reg (alu_reg_reg (AluOP.Lsr) (value_regs_get x 0) shamt6))
+      (low Reg (alu_reg_reg (AluOP.Or) low1 low2))
+      ;; select permutation
+      (_ Unit (cmp_reg_imm shamt6 (imm15 32)))
+      (high_perm Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThanOrEqual) high low))
+      (low_perm Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThanOrEqual) low high))
+      ;; handle shamt == 0
+      (_ Unit (cmp_reg_reg shamt6 (zero_reg)))
+      (high_z Reg (cond_move_reg_reg (IntCC.Equal) high_perm (value_regs_get x 1)))
+      (low_z Reg (cond_move_reg_reg (IntCC.Equal) low_perm (value_regs_get x 0))))
+    (value_regs low_z high_z)))

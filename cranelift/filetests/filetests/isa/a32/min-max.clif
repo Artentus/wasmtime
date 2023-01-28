@@ -1,0 +1,217 @@
+test compile precise-output
+target a32
+
+function %umin32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = umin.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a1
+;   mv.u.g a0, a0, a1
+;   ret
+
+
+function %umin16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = umin.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   zext16 a3, a0
+;   zext16 a5, a1
+;   cmp a3, a5
+;   mv.u.g a0, a0, a1
+;   ret
+
+
+function %umin8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = umin.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   zext8 a3, a0
+;   zext8 a5, a1
+;   cmp a3, a5
+;   mv.u.g a0, a0, a1
+;   ret
+
+
+function %umin64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = umin.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   mv.u.g a0, a0, a2
+;   mv.u.g a1, a1, a3
+;   ret
+
+
+function %umax32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = umax.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a1
+;   mv.u.l a0, a0, a1
+;   ret
+
+
+function %umax16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = umax.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   zext16 a3, a0
+;   zext16 a5, a1
+;   cmp a3, a5
+;   mv.u.l a0, a0, a1
+;   ret
+
+
+function %umax8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = umax.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   zext8 a3, a0
+;   zext8 a5, a1
+;   cmp a3, a5
+;   mv.u.l a0, a0, a1
+;   ret
+
+
+function %umax64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = umax.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   mv.u.l a0, a0, a2
+;   mv.u.l a1, a1, a3
+;   ret
+
+
+function %smin32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = smin.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a1
+;   mv.s.g a0, a0, a1
+;   ret
+
+
+function %smin16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = smin.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   sext16 a3, a0
+;   sext16 a5, a1
+;   cmp a3, a5
+;   mv.s.g a0, a0, a1
+;   ret
+
+
+function %smin8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = smin.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   sext8 a3, a0
+;   sext8 a5, a1
+;   cmp a3, a5
+;   mv.s.g a0, a0, a1
+;   ret
+
+
+function %smin64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = smin.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   mv.s.g a0, a0, a2
+;   mv.s.g a1, a1, a3
+;   ret
+
+
+function %smax32(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = smax.i32 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a1
+;   mv.s.l a0, a0, a1
+;   ret
+
+
+function %smax16(i16, i16) -> i16 {
+block0(v0: i16, v1: i16):
+  v2 = smax.i16 v0, v1
+  return v2
+}
+
+; block0:
+;   sext16 a3, a0
+;   sext16 a5, a1
+;   cmp a3, a5
+;   mv.s.l a0, a0, a1
+;   ret
+
+
+function %smax8(i8, i8) -> i8 {
+block0(v0: i8, v1: i8):
+  v2 = smax.i8 v0, v1
+  return v2
+}
+
+; block0:
+;   sext8 a3, a0
+;   sext8 a5, a1
+;   cmp a3, a5
+;   mv.s.l a0, a0, a1
+;   ret
+
+
+function %smax64(i64, i64) -> i64 {
+block0(v0: i64, v1: i64):
+  v2 = smax.i64 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   mv.s.l a0, a0, a2
+;   mv.s.l a1, a1, a3
+;   ret

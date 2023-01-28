@@ -7,6 +7,7 @@ mod arm64;
 mod riscv64;
 mod s390x;
 pub(crate) mod x86;
+mod a32;
 
 /// Represents known ISA target.
 #[derive(PartialEq, Copy, Clone)]
@@ -15,6 +16,7 @@ pub enum Isa {
     Arm64,
     S390x,
     Riscv64,
+    A32,
 }
 
 impl Isa {
@@ -33,13 +35,14 @@ impl Isa {
             "s390x" => Some(Isa::S390x),
             x if ["x86_64", "i386", "i586", "i686"].contains(&x) => Some(Isa::X86),
             "riscv64" | "riscv64gc" | "riscv64imac" => Some(Isa::Riscv64),
+            "a32" => Some(Isa::A32),
             _ => None,
         }
     }
 
     /// Returns all supported isa targets.
     pub fn all() -> &'static [Isa] {
-        &[Isa::X86, Isa::Arm64, Isa::S390x, Isa::Riscv64]
+        &[Isa::X86, Isa::Arm64, Isa::S390x, Isa::Riscv64, Isa::A32]
     }
 }
 
@@ -51,6 +54,7 @@ impl fmt::Display for Isa {
             Isa::Arm64 => write!(f, "arm64"),
             Isa::S390x => write!(f, "s390x"),
             Isa::Riscv64 => write!(f, "riscv64"),
+            Isa::A32 => write!(f, "a32"),
         }
     }
 }
@@ -62,6 +66,7 @@ pub(crate) fn define(isas: &[Isa], shared_defs: &mut SharedDefinitions) -> Vec<T
             Isa::Arm64 => arm64::define(shared_defs),
             Isa::S390x => s390x::define(shared_defs),
             Isa::Riscv64 => riscv64::define(shared_defs),
+            Isa::A32 => a32::define(shared_defs),
         })
         .collect()
 }

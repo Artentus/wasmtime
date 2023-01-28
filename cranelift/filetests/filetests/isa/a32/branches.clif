@@ -1,0 +1,563 @@
+test compile precise-output
+target a32
+
+function %brnz(i32) -> i32 {
+block0(v0: i32):
+  brnz v0, block1
+  jump block2
+
+block1:
+  v1 = iconst.i32 1
+  return v1
+
+block2:
+  v2 = iconst.i32 2
+  return v2
+}
+
+; block0:
+;   cmp a0, 0
+;   br.neq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %brz(i32) -> i32 {
+block0(v0: i32):
+  brz v0, block1
+  jump block2
+
+block1:
+  v1 = iconst.i32 1
+  return v1
+
+block2:
+  v2 = iconst.i32 2
+  return v2
+}
+
+; block0:
+;   cmp a0, 0
+;   br.eq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %brnz_64(i64) -> i32 {
+block0(v0: i64):
+  brnz v0, block1
+  jump block2
+
+block1:
+  v1 = iconst.i32 1
+  return v1
+
+block2:
+  v2 = iconst.i32 2
+  return v2
+}
+
+; block0:
+;   cmp a0, 0
+;   cmpb a1, 0
+;   br.neq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %brz_64(i64) -> i32 {
+block0(v0: i64):
+  brz v0, block1
+  jump block2
+
+block1:
+  v1 = iconst.i32 1
+  return v1
+
+block2:
+  v2 = iconst.i32 2
+  return v2
+}
+
+; block0:
+;   cmp a0, 0
+;   cmpb a1, 0
+;   br.eq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %eq_brnz(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = icmp eq v0, v1
+  brnz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a1
+;   br.eq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %ne_brnz(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = icmp ne v0, v1
+  brnz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a1
+;   br.neq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %slt_brnz(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = icmp slt v0, v1
+  brnz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a1
+;   br.s.l MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %ult_brnz(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = icmp ult v0, v1
+  brnz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a1
+;   br.u.l MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %eq_brz(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = icmp eq v0, v1
+  brz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a1
+;   br.neq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %ne_brz(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = icmp ne v0, v1
+  brz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a1
+;   br.eq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %slt_brz(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = icmp slt v0, v1
+  brz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a1
+;   br.s.ge MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %ult_brz(i32, i32) -> i32 {
+block0(v0: i32, v1: i32):
+  v2 = icmp ult v0, v1
+  brz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a1
+;   br.u.ge MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %eq_brnz_64(i64, i64) -> i32 {
+block0(v0: i64, v1: i64):
+  v2 = icmp eq v0, v1
+  brnz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   br.eq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %ne_brnz_64(i64, i64) -> i32 {
+block0(v0: i64, v1: i64):
+  v2 = icmp ne v0, v1
+  brnz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   br.neq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %slt_brnz_64(i64, i64) -> i32 {
+block0(v0: i64, v1: i64):
+  v2 = icmp slt v0, v1
+  brnz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   br.s.l MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %ult_brnz_64(i64, i64) -> i32 {
+block0(v0: i64, v1: i64):
+  v2 = icmp ult v0, v1
+  brnz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   br.u.l MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %eq_brz_64(i64, i64) -> i32 {
+block0(v0: i64, v1: i64):
+  v2 = icmp eq v0, v1
+  brz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   br.neq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %ne_brz_64(i64, i64) -> i32 {
+block0(v0: i64, v1: i64):
+  v2 = icmp ne v0, v1
+  brz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   br.eq MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %slt_brz_64(i64, i64) -> i32 {
+block0(v0: i64, v1: i64):
+  v2 = icmp slt v0, v1
+  brz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   br.s.ge MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %ult_brz_64(i64, i64) -> i32 {
+block0(v0: i64, v1: i64):
+  v2 = icmp ult v0, v1
+  brz v2, block1
+  jump block2
+
+block1:
+  v3 = iconst.i32 1
+  return v3
+
+block2:
+  v4 = iconst.i32 2
+  return v4
+}
+
+; block0:
+;   cmp a0, a2
+;   cmpb a1, a3
+;   br.u.ge MachLabel(1), MachLabel(2)
+; block1:
+;   ldi a0, 1
+;   ret
+; block2:
+;   ldi a0, 2
+;   ret
+
+
+function %table(i32) -> i8 {
+  jt0 = jump_table [block1, block2, block3]
+
+block0(v0: i32):
+  br_table v0, block1, jt0
+
+block1:
+  v1 = iconst.i8 1
+  return v1
+
+block2:
+  v2 = iconst.i8 2
+  return v2
+
+block3:
+  v3 = iconst.i8 3
+  return v3
+}
+
+; block0:
+;   jump_table tmp=a0 a5, [MachLabel(1), MachLabel(2), MachLabel(4), MachLabel(5)]
+; block1:
+;   jr MachLabel(3)
+; block2:
+;   jr MachLabel(3)
+; block3:
+;   ldi a0, 1
+;   ret
+; block4:
+;   ldi a0, 2
+;   ret
+; block5:
+;   ldi a0, 3
+;   ret

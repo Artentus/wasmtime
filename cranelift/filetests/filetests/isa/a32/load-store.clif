@@ -1,0 +1,316 @@
+test compile precise-output
+target a32
+
+;;;; LOAD i8
+
+function %load16_i8(i32) -> i8 {
+block0(v0: i32):
+  v1 = load.i8 v0+42
+  return v1
+}
+
+; block0:
+;   ld8 a0, [a0, 42]
+;   ret
+
+
+;;;; LOAD i16
+
+function %uload8_i16(i32) -> i16 {
+block0(v0: i32):
+  v1 = uload8.i16 v0+42
+  return v1
+}
+
+; block0:
+;   ld8 a0, [a0, 42]
+;   ret
+
+
+function %sload8_i16(i32) -> i16 {
+block0(v0: i32):
+  v1 = sload8.i16 v0+42
+  return v1
+}
+
+; block0:
+;   ld8s a0, [a0, 42]
+;   ret
+
+
+function %load16_i16(i32) -> i16 {
+block0(v0: i32):
+  v1 = load.i16 v0+42
+  return v1
+}
+
+; block0:
+;   ld16 a0, [a0, 42]
+;   ret
+
+
+;;;; LOAD i32
+
+function %uload8_i32(i32) -> i32 {
+block0(v0: i32):
+  v1 = uload8.i32 v0+42
+  return v1
+}
+
+; block0:
+;   ld8 a0, [a0, 42]
+;   ret
+
+
+function %sload8_i32(i32) -> i32 {
+block0(v0: i32):
+  v1 = sload8.i32 v0+42
+  return v1
+}
+
+; block0:
+;   ld8s a0, [a0, 42]
+;   ret
+
+
+function %uload16_i32(i32) -> i32 {
+block0(v0: i32):
+  v1 = uload16.i32 v0+42
+  return v1
+}
+
+; block0:
+;   ld16 a0, [a0, 42]
+;   ret
+
+
+function %sload16_i32(i32) -> i32 {
+block0(v0: i32):
+  v1 = sload16.i32 v0+42
+  return v1
+}
+
+; block0:
+;   ld16s a0, [a0, 42]
+;   ret
+
+
+function %load32_i32(i32) -> i32 {
+block0(v0: i32):
+  v1 = load.i32 v0+42
+  return v1
+}
+
+; block0:
+;   ld a0, [a0, 42]
+;   ret
+
+
+;;;; LOAD i64
+
+function %uload8_i64(i32) -> i64 {
+block0(v0: i32):
+  v1 = uload8.i64 v0+42
+  return v1
+}
+
+; block0:
+;   ld8 a0, [a0, 42]
+;   ldi a1, 0
+;   ret
+
+
+function %sload8_i64(i32) -> i64 {
+block0(v0: i32):
+  v1 = sload8.i64 v0+42
+  return v1
+}
+
+; block0:
+;   ld8s a0, [a0, 42]
+;   cmp a0, 0
+;   mv.s.l a1, zero, -1
+;   ret
+
+
+function %uload16_i64(i32) -> i64 {
+block0(v0: i32):
+  v1 = uload16.i64 v0+42
+  return v1
+}
+
+; block0:
+;   ld16 a0, [a0, 42]
+;   ldi a1, 0
+;   ret
+
+
+function %sload16_i64(i32) -> i64 {
+block0(v0: i32):
+  v1 = sload16.i64 v0+42
+  return v1
+}
+
+; block0:
+;   ld16s a0, [a0, 42]
+;   cmp a0, 0
+;   mv.s.l a1, zero, -1
+;   ret
+
+
+function %uload32_i64(i32) -> i64 {
+block0(v0: i32):
+  v1 = uload32.i64 v0+42
+  return v1
+}
+
+; block0:
+;   ld a0, [a0, 42]
+;   ldi a1, 0
+;   ret
+
+
+function %sload32_i64(i32) -> i64 {
+block0(v0: i32):
+  v1 = sload32.i64 v0+42
+  return v1
+}
+
+; block0:
+;   ld a0, [a0, 42]
+;   cmp a0, 0
+;   mv.s.l a1, zero, -1
+;   ret
+
+
+function %load64_i64(i32) -> i64 {
+block0(v0: i32):
+  v1 = load.i64 v0+42
+  return v1
+}
+
+; block0:
+;   ld a2, [a0, 42]
+;   mov a4, a2
+;   ld a1, [a0, 46]
+;   mov a0, a4
+;   ret
+
+
+;;;; STORE i8
+
+function %store16_i8(i32, i8) {
+block0(v0: i32, v1: i8):
+  store.i8 v1, v0+42
+  return
+}
+
+; block0:
+;   st8 [a0, 42], a1
+;   ret
+
+
+;;;; STORE i16
+
+function %store8_i32(i32, i16) {
+block0(v0: i32, v1: i16):
+  istore8.i16 v1, v0+42
+  return
+}
+
+; block0:
+;   st8 [a0, 42], a1
+;   ret
+
+
+function %store16_i16(i32, i16) {
+block0(v0: i32, v1: i16):
+  store.i16 v1, v0+42
+  return
+}
+
+; block0:
+;   st16 [a0, 42], a1
+;   ret
+
+
+;;;; STORE i32
+
+function %store8_i32(i32, i32) {
+block0(v0: i32, v1: i32):
+  istore8.i32 v1, v0+42
+  return
+}
+
+; block0:
+;   st8 [a0, 42], a1
+;   ret
+
+
+function %store16_i32(i32, i32) {
+block0(v0: i32, v1: i32):
+  istore16.i32 v1, v0+42
+  return
+}
+
+; block0:
+;   st16 [a0, 42], a1
+;   ret
+
+
+function %store32_i32(i32, i32) {
+block0(v0: i32, v1: i32):
+  store.i32 v1, v0+42
+  return
+}
+
+; block0:
+;   st [a0, 42], a1
+;   ret
+
+
+;;;; STORE i64
+
+function %store8_i64(i32, i64) {
+block0(v0: i32, v1: i64):
+  istore8.i64 v1, v0+42
+  return
+}
+
+; block0:
+;   st8 [a0, 42], a1
+;   ret
+
+
+function %store16_i64(i32, i64) {
+block0(v0: i32, v1: i64):
+  istore16.i64 v1, v0+42
+  return
+}
+
+; block0:
+;   st16 [a0, 42], a1
+;   ret
+
+
+function %store32_i64(i32, i64) {
+block0(v0: i32, v1: i64):
+  istore32.i64 v1, v0+42
+  return
+}
+
+; block0:
+;   st [a0, 42], a1
+;   ret
+
+
+function %store64_i64(i32, i64) {
+block0(v0: i32, v1: i64):
+  store.i64 v1, v0+42
+  return
+}
+
+; block0:
+;   st [a0, 42], a1
+;   st [a0, 46], a2
+;   ret

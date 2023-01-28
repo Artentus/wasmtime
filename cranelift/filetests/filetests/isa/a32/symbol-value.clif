@@ -1,0 +1,15 @@
+test compile precise-output
+target a32
+
+function %f() -> i32 {
+  gv0 = symbol %my_global
+
+block0:
+  v0 = symbol_value.i32 gv0
+  return v0
+}
+
+; block0:
+;   load_sym a0, %my_global+0
+;   ret
+

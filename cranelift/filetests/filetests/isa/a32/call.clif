@@ -1,0 +1,132 @@
+test compile precise-output
+target a32
+
+function %f1(i32) -> i32 {
+    fn0 = %g(i32) -> i32
+
+block0(v0: i32):
+    v1 = call fn0(v0)
+    return v1
+}
+
+;   sp_adj -8
+;   st [sp, 0], ra
+;   st [sp, 4], s12
+;   mov s12, sp
+; block0:
+;   load_sym a3, %g+0
+;   call_ind a3
+;   ld ra, [sp, 0]
+;   ld s12, [sp, 4]
+;   sp_adj +8
+;   ret
+
+
+function %f2(i32) -> i32, i32, i32 {
+block0(v0: i32):
+    v1 = iconst.i32 42
+    return v1, v1, v0
+}
+
+; block0:
+;   mov a7, a0
+;   mov t1, a1
+;   ldi a0, 42
+;   ldi a1, 42
+;   st [t1, 0], a7
+;   ret
+
+
+function %f3(i32, i32, i32, i32, i32, i32, i32, i32, i32) -> i32 {
+block0(v0: i32, v1: i32, v2: i32, v3: i32, v4: i32, v5: i32, v6: i32, v7: i32, v8: i32):
+    return v8
+}
+
+;   sp_adj -8
+;   st [sp, 0], ra
+;   st [sp, 4], s12
+;   mov s12, sp
+; block0:
+;   ld a0, [s12, 8]
+;   ld ra, [sp, 0]
+;   ld s12, [sp, 4]
+;   sp_adj +8
+;   ret
+
+
+function %f4() -> i32 {
+    fn0 = %g(i32, i32, i32, i32, i32, i32, i32, i32, i32) -> i32
+
+block0:
+    v0 = iconst.i32 42
+    v1 = call fn0(v0, v0, v0, v0, v0, v0, v0, v0, v0)
+    return v1
+}
+
+;   sp_adj -8
+;   st [sp, 0], ra
+;   st [sp, 4], s12
+;   mov s12, sp
+; block0:
+;   sp_adj -4
+;   nom_sp_adj +4
+;   ldi a0, 42
+;   ldi a1, 42
+;   ldi a2, 42
+;   ldi a3, 42
+;   ldi a4, 42
+;   ldi a5, 42
+;   ldi a6, 42
+;   ldi a7, 42
+;   ldi t0, 42
+;   st [sp, 0], t0
+;   load_sym t0, %g+0
+;   call_ind t0
+;   sp_adj +4
+;   nom_sp_adj -4
+;   ld ra, [sp, 0]
+;   ld s12, [sp, 4]
+;   sp_adj +8
+;   ret
+
+
+function %f5(i32) -> i32 {
+    fn0 = %g(i32) -> i32, i32, i32
+
+block0(v0: i32):
+    v1, v2, v3 = call fn0(v0)
+    return v3
+}
+
+;   sp_adj -8
+;   st [sp, 0], ra
+;   st [sp, 4], s12
+;   mov s12, sp
+; block0:
+;   sp_adj -4
+;   nom_sp_adj +4
+;   load_addr a1, sp+0
+;   load_sym t1, %g+0
+;   call_ind t1
+;   ld a0, [sp, 0]
+;   sp_adj +4
+;   nom_sp_adj -4
+;   ld ra, [sp, 0]
+;   ld s12, [sp, 4]
+;   sp_adj +8
+;   ret
+
+
+function %f6(i32) -> i32, i32, i32 {
+block0(v0: i32):
+    v1 = iconst.i32 42
+    return v1, v1, v0
+}
+
+; block0:
+;   mov a7, a0
+;   mov t1, a1
+;   ldi a0, 42
+;   ldi a1, 42
+;   st [t1, 0], a7
+;   ret

@@ -90,6 +90,7 @@ impl ObjectBuilder {
                 object::Architecture::Riscv64
             }
             target_lexicon::Architecture::S390x => object::Architecture::S390x,
+            target_lexicon::Architecture::A32 => object::Architecture::A32,
             architecture => {
                 return Err(ModuleError::Backend(anyhow!(
                     "target architecture {:?} is unsupported",
@@ -716,6 +717,18 @@ impl ObjectModule {
                 );
                 (
                     RelocationKind::Elf(object::elf::R_RISCV_CALL),
+                    RelocationEncoding::Generic,
+                    0,
+                )
+            }
+            Reloc::A32Call => {
+                assert_eq!(
+                    self.object.format(),
+                    object::BinaryFormat::Elf,
+                    "A32Rel is not supported for this file format"
+                );
+                (
+                    RelocationKind::Elf(object::elf::R_A32_REL32),
                     RelocationEncoding::Generic,
                     0,
                 )
