@@ -281,6 +281,13 @@ impl MachInstEmit for MInst {
                 let inst = MInst::AluRegImm { op: AluOP::SubB, rd, rs, imm };
                 inst.emit(&[], code, emit_info, state);
             }
+            &MInst::BitRegImm { rs, imm } => {
+                let rs = allocs.next(rs);
+                let rd = zero_w();
+
+                let inst = MInst::AluRegImm { op: AluOP::And, rd, rs, imm };
+                inst.emit(&[], code, emit_info, state);
+            }
             &MInst::SPAdj { amount } => {
                 match gen_imm_pair(amount) {
                     ImmPair::Lower(imm) => {

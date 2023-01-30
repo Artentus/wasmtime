@@ -43,6 +43,15 @@
       (high Reg (alu_reg_reg (AluOP.AddC) (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
 
+(rule
+  (lower (has_type $I128 (iadd x y)))
+  (let
+    ( (r1 Reg (alu_reg_reg (AluOP.Add) (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (alu_reg_reg (AluOP.AddC) (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (alu_reg_reg (AluOP.AddC) (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (alu_reg_reg (AluOP.AddC) (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
+
 
 ;;;; Rules for `isub` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -60,6 +69,15 @@
       ;; high part
       (high Reg (alu_reg_reg (AluOP.SubB) (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
+
+(rule
+  (lower (has_type $I128 (isub x y)))
+  (let
+    ( (r1 Reg (alu_reg_reg (AluOP.Sub) (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (alu_reg_reg (AluOP.SubB) (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (alu_reg_reg (AluOP.SubB) (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (alu_reg_reg (AluOP.SubB) (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
 
 
 ;;;; Rules for `band` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -82,6 +100,15 @@
       (high Reg (alu_reg_reg (AluOP.And) (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
 
+(rule
+  (lower (has_type $I128 (band x y)))
+  (let
+    ( (r1 Reg (alu_reg_reg (AluOP.And) (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (alu_reg_reg (AluOP.And) (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (alu_reg_reg (AluOP.And) (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (alu_reg_reg (AluOP.And) (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
+
 
 ;;;; Rules for `bor` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -102,6 +129,15 @@
       ;; high part
       (high Reg (alu_reg_reg (AluOP.Or) (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
+
+(rule
+  (lower (has_type $I128 (bor x y)))
+  (let
+    ( (r1 Reg (alu_reg_reg (AluOP.Or) (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (alu_reg_reg (AluOP.Or) (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (alu_reg_reg (AluOP.Or) (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (alu_reg_reg (AluOP.Or) (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
 
 
 ;;;; Rules for `bxor` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -124,6 +160,15 @@
       (high Reg (alu_reg_reg (AluOP.Xor) (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
 
+(rule
+  (lower (has_type $I128 (bxor x y)))
+  (let
+    ( (r1 Reg (alu_reg_reg (AluOP.Xor) (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (alu_reg_reg (AluOP.Xor) (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (alu_reg_reg (AluOP.Xor) (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (alu_reg_reg (AluOP.Xor) (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
+
 
 ;;;; Rules for `ishl` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -137,10 +182,13 @@
   (alu_reg_imm (AluOP.Shl) x y))
 
 (rule 1 (lower (has_type (fits_in_32 ty) (ishl x y)))
-  (alu_reg_reg (AluOP.Shl) x (mask_shamt ty y)))
+  (alu_reg_reg (AluOP.Shl) x (mask_shamt ty (value_regs_get y 0))))
 
 (rule (lower (has_type $I64 (ishl x y)))
   (lower_i64_ishl x y))
+
+(rule (lower (has_type $I128 (ishl x y)))
+  (libcall_2 (LibCall.Shl128) $I128 x $I8 (value_regs_get y 0) $I128))
 
 
 ;;;; Rules for `ushr` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -155,10 +203,13 @@
   (alu_reg_imm (AluOP.Lsr) x y))
 
 (rule 1 (lower (has_type (fits_in_32 ty) (ushr x y)))
-  (alu_reg_reg (AluOP.Lsr) x (mask_shamt ty y)))
+  (alu_reg_reg (AluOP.Lsr) x (mask_shamt ty (value_regs_get y 0))))
 
 (rule (lower (has_type $I64 (ushr x y)))
   (lower_i64_ushr x y))
+
+(rule (lower (has_type $I128 (ushr x y)))
+  (libcall_2 (LibCall.UShr128) $I128 x $I8 (value_regs_get y 0) $I128))
 
 
 ;;;; Rules for `sshr` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -173,10 +224,13 @@
   (alu_reg_imm (AluOP.Asr) x y))
 
 (rule 1 (lower (has_type (fits_in_32 ty) (sshr x y)))
-  (alu_reg_reg (AluOP.Asr) x (mask_shamt ty y)))
+  (alu_reg_reg (AluOP.Asr) x (mask_shamt ty (value_regs_get y 0))))
 
 (rule (lower (has_type $I64 (sshr x y)))
   (lower_i64_sshr x y))
+
+(rule (lower (has_type $I128 (sshr x y)))
+  (libcall_2 (LibCall.SShr128) $I128 x $I8 (value_regs_get y 0) $I128))
 
 
 ;;;; Rules for `imul` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -192,6 +246,9 @@
 
 (rule (lower (has_type $I64 (imul x y)))
   (lower_i64_imul x y))
+
+(rule (lower (has_type $I128 (imul x y)))
+  (libcall_2 (LibCall.Mul128) $I128 x $I128 y $I128))
 
 
 ;;;; Rules for `umulhi` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -227,37 +284,49 @@
 ;;;; Rules for `udiv` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (rule 1 (lower (has_type (fits_in_32 ty) (udiv x y)))
-  (libcall32_2 (LibCall.UDiv32) x y))
+  (libcall_2 (LibCall.UDiv32) $I32 x $I32 y $I32))
 
 (rule (lower (has_type $I64 (udiv x y)))
-  (libcall64_2 (LibCall.UDiv64) x y))
+  (libcall_2 (LibCall.UDiv64) $I64 x $I64 y $I64))
+
+(rule (lower (has_type $I128 (udiv x y)))
+  (libcall_2 (LibCall.UDiv128) $I128 x $I128 y $I128))
 
 
 ;;;; Rules for `sdiv` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (rule 1 (lower (has_type (fits_in_32 ty) (sdiv x y)))
-  (libcall32_2 (LibCall.SDiv32) x y))
+  (libcall_2 (LibCall.SDiv32) $I32 x $I32 y $I32))
 
 (rule (lower (has_type $I64 (sdiv x y)))
-  (libcall64_2 (LibCall.SDiv64) x y))
+  (libcall_2 (LibCall.SDiv64) $I64 x $I64 y $I64))
+
+(rule (lower (has_type $I128 (sdiv x y)))
+  (libcall_2 (LibCall.SDiv128) $I128 x $I128 y $I128))
 
 
 ;;;; Rules for `urem` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (rule 1 (lower (has_type (fits_in_32 ty) (urem x y)))
-  (libcall32_2 (LibCall.URem32) x y))
+  (libcall_2 (LibCall.URem32) $I32 x $I32 y $I32))
 
 (rule (lower (has_type $I64 (urem x y)))
-  (libcall64_2 (LibCall.URem64) x y))
+  (libcall_2 (LibCall.URem64) $I64 x $I64 y $I64))
+
+(rule (lower (has_type $I128 (urem x y)))
+  (libcall_2 (LibCall.URem128) $I128 x $I128 y $I128))
 
 
 ;;;; Rules for `srem` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (rule 1 (lower (has_type (fits_in_32 ty) (srem x y)))
-  (libcall32_2 (LibCall.SRem32) x y))
+  (libcall_2 (LibCall.SRem32) $I32 x $I32 y $I32))
 
 (rule (lower (has_type $I64 (srem x y)))
-  (libcall64_2 (LibCall.SRem64) x y))
+  (libcall_2 (LibCall.SRem64) $I64 x $I64 y $I64))
+
+(rule (lower (has_type $I128 (srem x y)))
+  (libcall_2 (LibCall.SRem128) $I128 x $I128 y $I128))
 
 
 ;;;; Rules for `ineg` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -274,6 +343,15 @@
       (high Reg (alu_reg_negb (value_regs_get x 1))))
     (value_regs low high)))
 
+(rule
+  (lower (has_type $I128 (ineg x)))
+  (let
+    ( (r1 Reg (alu_reg_neg (value_regs_get x 0)))
+      (r2 Reg (alu_reg_negb (value_regs_get x 1)))
+      (r3 Reg (alu_reg_negb (value_regs_get x 2)))
+      (r4 Reg (alu_reg_negb (value_regs_get x 3))))
+    (value_regs_four r1 r2 r3 r4)))
+
 
 ;;;; Rules for `bnot` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -288,6 +366,16 @@
       ;; high part
       (high Reg (alu_reg_not (value_regs_get x 1))))
     (value_regs low high)))
+
+(rule
+  (lower (has_type $I128 (bnot x)))
+  (let
+    ( (r1 Reg (alu_reg_not (value_regs_get x 0)))
+      (r2 Reg (alu_reg_not (value_regs_get x 1)))
+      (r3 Reg (alu_reg_not (value_regs_get x 2)))
+      (r4 Reg (alu_reg_not (value_regs_get x 3))))
+    (value_regs_four r1 r2 r3 r4)))
+
 
 
 ;;;; Rules for `band_not` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -304,6 +392,15 @@
       (high Reg (lower_and_not (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
 
+(rule
+  (lower (has_type $I128 (band_not x y)))
+  (let
+    ( (r1 Reg (lower_and_not (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (lower_and_not (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (lower_and_not (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (lower_and_not (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
+
 
 ;;;; Rules for `bor_not` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -319,6 +416,15 @@
       (high Reg (lower_or_not (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
 
+(rule
+  (lower (has_type $I128 (bor_not x y)))
+  (let
+    ( (r1 Reg (lower_or_not (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (lower_or_not (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (lower_or_not (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (lower_or_not (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
+
 
 ;;;; Rules for `bxor_not` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -333,6 +439,15 @@
       ;; high part
       (high Reg (lower_xor_not (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
+
+(rule
+  (lower (has_type $I128 (bxor_not x y)))
+  (let
+    ( (r1 Reg (lower_xor_not (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (lower_xor_not (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (lower_xor_not (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (lower_xor_not (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
 
 
 ;;; Rules for `iabs` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -359,6 +474,23 @@
       (low Reg (cond_move_reg_reg (IntCC.SignedLessThan) (value_regs_get x 0) low_neg))
       (high Reg (cond_move_reg_reg (IntCC.SignedLessThan) (value_regs_get x 1) high_neg)))
     (value_regs low high)))
+
+(rule
+  (lower (has_type $I128 (iabs x)))
+  (let
+    ( ;; negative
+      (r1_neg Reg (alu_reg_neg (value_regs_get x 0)))
+      (r2_neg Reg (alu_reg_negb (value_regs_get x 1)))
+      (r3_neg Reg (alu_reg_negb (value_regs_get x 2)))
+      (r4_neg Reg (alu_reg_negb (value_regs_get x 3)))
+      ;; compare upper word only
+      (_ Unit (cmp_reg_imm (value_regs_get x 3) (imm15 0)))
+      ;; select
+      (r1 Reg (cond_move_reg_reg (IntCC.SignedLessThan) (value_regs_get x 0) r1_neg))
+      (r2 Reg (cond_move_reg_reg (IntCC.SignedLessThan) (value_regs_get x 1) r2_neg))
+      (r3 Reg (cond_move_reg_reg (IntCC.SignedLessThan) (value_regs_get x 2) r3_neg))
+      (r4 Reg (cond_move_reg_reg (IntCC.SignedLessThan) (value_regs_get x 3) r4_neg)))
+    (value_regs_four r1 r2 r3 r4)))
 
 
 ;;;;;  Rules for `umin` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -399,6 +531,21 @@
       (high Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThan) (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
 
+(rule
+  (lower (has_type $I128 (umin x y)))
+  (let
+    ( ;; 128 bit compare
+      (_ Unit (cmp_reg_reg (value_regs_get x 0) (value_regs_get y 0)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 2) (value_regs_get y 2)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 3) (value_regs_get y 3)))
+      ;; 128 bit move
+      (r1 Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThan) (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThan) (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThan) (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (cond_move_reg_reg (IntCC.UnsignedGreaterThan) (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
+
 
 ;;;;;  Rules for `umax` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -437,6 +584,21 @@
       (low Reg (cond_move_reg_reg (IntCC.UnsignedLessThan) (value_regs_get x 0) (value_regs_get y 0)))
       (high Reg (cond_move_reg_reg (IntCC.UnsignedLessThan) (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
+
+(rule
+  (lower (has_type $I128 (umax x y)))
+  (let
+    ( ;; 128 bit compare
+      (_ Unit (cmp_reg_reg (value_regs_get x 0) (value_regs_get y 0)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 2) (value_regs_get y 2)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 3) (value_regs_get y 3)))
+      ;; 128 bit move
+      (r1 Reg (cond_move_reg_reg (IntCC.UnsignedLessThan) (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (cond_move_reg_reg (IntCC.UnsignedLessThan) (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (cond_move_reg_reg (IntCC.UnsignedLessThan) (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (cond_move_reg_reg (IntCC.UnsignedLessThan) (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
 
 
 ;;;;;  Rules for `smin` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -477,6 +639,21 @@
       (high Reg (cond_move_reg_reg (IntCC.SignedGreaterThan) (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
 
+(rule
+  (lower (has_type $I128 (smin x y)))
+  (let
+    ( ;; 128 bit compare
+      (_ Unit (cmp_reg_reg (value_regs_get x 0) (value_regs_get y 0)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 2) (value_regs_get y 2)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 3) (value_regs_get y 3)))
+      ;; 128 bit move
+      (r1 Reg (cond_move_reg_reg (IntCC.SignedGreaterThan) (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (cond_move_reg_reg (IntCC.SignedGreaterThan) (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (cond_move_reg_reg (IntCC.SignedGreaterThan) (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (cond_move_reg_reg (IntCC.SignedGreaterThan) (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
+
 
 ;;;;;  Rules for `smax` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -516,6 +693,21 @@
       (high Reg (cond_move_reg_reg (IntCC.SignedLessThan) (value_regs_get x 1) (value_regs_get y 1))))
     (value_regs low high)))
 
+(rule
+  (lower (has_type $I128 (smax x y)))
+  (let
+    ( ;; 128 bit compare
+      (_ Unit (cmp_reg_reg (value_regs_get x 0) (value_regs_get y 0)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 2) (value_regs_get y 2)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 3) (value_regs_get y 3)))
+      ;; 128 bit move
+      (r1 Reg (cond_move_reg_reg (IntCC.SignedLessThan) (value_regs_get x 0) (value_regs_get y 0)))
+      (r2 Reg (cond_move_reg_reg (IntCC.SignedLessThan) (value_regs_get x 1) (value_regs_get y 1)))
+      (r3 Reg (cond_move_reg_reg (IntCC.SignedLessThan) (value_regs_get x 2) (value_regs_get y 2)))
+      (r4 Reg (cond_move_reg_reg (IntCC.SignedLessThan) (value_regs_get x 3) (value_regs_get y 3))))
+    (value_regs_four r1 r2 r3 r4)))
+
 
 ;;;;;  Rules for `icmp` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -550,6 +742,16 @@
     ( ;; 64 bit compare
       (_ Unit (cmp_reg_reg (value_regs_get x 0) (value_regs_get y 0)))
       (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1))))
+    (cond_move_reg_imm cc (zero_reg) (imm15 1))))
+
+(rule 4
+  (lower (icmp cc x @ (value_type $I128) y))
+  (let
+    ( ;; 128 bit compare
+      (_ Unit (cmp_reg_reg (value_regs_get x 0) (value_regs_get y 0)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 2) (value_regs_get y 2)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 3) (value_regs_get y 3))))
     (cond_move_reg_imm cc (zero_reg) (imm15 1))))
 
 
@@ -599,6 +801,38 @@
       (high Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1))))
     (value_regs x high)))
 
+(rule (lower (has_type $I128 (uextend x @ (value_type $I32))))
+  (let
+    ( ;; set high 96 bits
+      (r2 Reg (load_imm (imm15 0)))
+      (r3 Reg (load_imm (imm15 0)))
+      (r4 Reg (load_imm (imm15 0))))
+    (value_regs_four x r2 r3 r4)))
+
+(rule (lower (has_type $I128 (sextend x @ (value_type $I32))))
+  (let
+    ( ;; set high 96 bits
+      (_ Unit (cmp_reg_imm x (imm15 0)))
+      (r2 Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1)))
+      (r3 Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1)))
+      (r4 Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1))))
+    (value_regs_four x r2 r3 r4)))
+
+(rule (lower (has_type $I128 (uextend x @ (value_type $I64))))
+  (let
+    ( ;; set high 64 bits
+      (r3 Reg (load_imm (imm15 0)))
+      (r4 Reg (load_imm (imm15 0))))
+    (value_regs_four (value_regs_get x 0) (value_regs_get x 1) r3 r4)))
+
+(rule (lower (has_type $I128 (sextend x @ (value_type $I64))))
+  (let
+    ( ;; set high 96 bits
+      (_ Unit (cmp_reg_imm (value_regs_get x 1) (imm15 0)))
+      (r3 Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1)))
+      (r4 Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1))))
+    (value_regs_four (value_regs_get x 0) (value_regs_get x 1) r3 r4)))
+
 (rule -1 (lower (has_type $I64 (uextend x @ (value_type in_ty))))
   (let
     ( ;; extend low 32 bits
@@ -615,6 +849,27 @@
       (_ Unit (cmp_reg_imm low (imm15 0)))
       (high Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1))))
     (value_regs low high)))
+
+(rule -1 (lower (has_type $I128 (uextend x @ (value_type in_ty))))
+  (let
+    ( ;; extend low 32 bits
+      (r1 Reg (lower_extend x $false (ty_bits in_ty) 32))
+      ;; set high 96 bits
+      (r2 Reg (load_imm (imm15 0)))
+      (r3 Reg (load_imm (imm15 0)))
+      (r4 Reg (load_imm (imm15 0))))
+    (value_regs_four r1 r2 r3 r4)))
+
+(rule -1 (lower (has_type $I128 (sextend x @ (value_type in_ty))))
+  (let
+    ( ;; extend low 32 bits
+      (r1 Reg (lower_extend x $true (ty_bits in_ty) 32))
+      ;; set high 96 bits
+      (_ Unit (cmp_reg_imm r1 (imm15 0)))
+      (r2 Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1)))
+      (r3 Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1)))
+      (r4 Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1))))
+    (value_regs_four r1 r2 r3 r4)))
 
 
 ;;;;;  Rules for `load.i8` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -722,6 +977,18 @@
     (value_regs low high)))
 
 
+;;;;;  Rules for `load.i128` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule
+  (lower (has_type $I128 (load _ base offset)))
+  (let
+    ( (r1 Reg (load_reg_imm (LoadOP.Ld32) base offset))
+      (r2 Reg (load_reg_imm (LoadOP.Ld32) base (add_offset offset 4)))
+      (r3 Reg (load_reg_imm (LoadOP.Ld32) base (add_offset offset 8)))
+      (r4 Reg (load_reg_imm (LoadOP.Ld32) base (add_offset offset 12))))
+    (value_regs_four r1 r2 r3 r4)))
+
+
 ;;;;  Rules for `store.i8` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (rule (lower (store _ x @ (value_type $I8) base offset))
@@ -766,6 +1033,16 @@
     (MInst.Store (StoreOP.St32) (value_regs_get x 0) (build_amode base offset))
     ;; high word
     (MInst.Store (StoreOP.St32) (value_regs_get x 1) (build_amode base (add_offset offset 4))))))
+
+
+;;;;  Rules for `store.i128` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule (lower (store _ x @ (value_type $I128) base offset))
+  (side_effect (SideEffectNoResult.Inst4
+    (MInst.Store (StoreOP.St32) (value_regs_get x 0) (build_amode base offset))
+    (MInst.Store (StoreOP.St32) (value_regs_get x 1) (build_amode base (add_offset offset 4)))
+    (MInst.Store (StoreOP.St32) (value_regs_get x 2) (build_amode base (add_offset offset 8)))
+    (MInst.Store (StoreOP.St32) (value_regs_get x 3) (build_amode base (add_offset offset 12))))))
 
 
 ;;;; Rules for calls ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -818,6 +1095,19 @@
       (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1))))
     (branch_rel (intcc_inverse cc) taken not_taken)))
 
+(rule -1
+  (lower_branch (brz (icmp cc x @ (value_type $I128) y) _ _) targets)
+  (let
+    ( ;; targets
+      (taken JumpTarget (jump_target targets 0))
+      (not_taken JumpTarget (jump_target targets 1))
+      ;; comparison
+      (_ Unit (cmp_reg_reg (value_regs_get x 0) (value_regs_get y 0)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 2) (value_regs_get y 2)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 3) (value_regs_get y 3))))
+    (branch_rel (intcc_inverse cc) taken not_taken)))
+
 (rule -2
   (lower_branch (brz (maybe_uextend (icmp cc x @ (value_type ty) y)) _ _) targets)
   (let
@@ -841,6 +1131,19 @@
       ;; comparison
       (_ Unit (cmp_reg_reg (value_regs_get x 0) (value_regs_get y 0)))
       (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1))))
+    (branch_rel cc taken not_taken)))
+
+(rule -1
+  (lower_branch (brnz (icmp cc x @ (value_type $I128) y) _ _) targets)
+  (let
+    ( ;; targets
+      (taken JumpTarget (jump_target targets 0))
+      (not_taken JumpTarget (jump_target targets 1))
+      ;; comparison
+      (_ Unit (cmp_reg_reg (value_regs_get x 0) (value_regs_get y 0)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 2) (value_regs_get y 2)))
+      (_ Unit (cmpb_reg_reg (value_regs_get x 3) (value_regs_get y 3))))
     (branch_rel cc taken not_taken)))
 
 (rule -2
@@ -868,6 +1171,19 @@
       (_ Unit (cmpb_reg_imm (value_regs_get c 1) (imm15 0))))
     (branch_rel (IntCC.Equal) taken not_taken)))
 
+(rule -3
+  (lower_branch (brz c @ (value_type $I128) _ _) targets)
+  (let
+    ( ;; targets
+      (taken JumpTarget (jump_target targets 0))
+      (not_taken JumpTarget (jump_target targets 1))
+      ;; comparison
+      (_ Unit (cmp_reg_imm (value_regs_get c 0) (imm15 0)))
+      (_ Unit (cmpb_reg_imm (value_regs_get c 1) (imm15 0)))
+      (_ Unit (cmpb_reg_imm (value_regs_get c 2) (imm15 0)))
+      (_ Unit (cmpb_reg_imm (value_regs_get c 3) (imm15 0))))
+    (branch_rel (IntCC.Equal) taken not_taken)))
+
 (rule -4
   (lower_branch (brz c @ (value_type ty) _ _) targets)
   (let
@@ -888,6 +1204,19 @@
       ;; comparison
       (_ Unit (cmp_reg_imm (value_regs_get c 0) (imm15 0)))
       (_ Unit (cmpb_reg_imm (value_regs_get c 1) (imm15 0))))
+    (branch_rel (IntCC.NotEqual) taken not_taken)))
+
+(rule -3
+  (lower_branch (brnz c @ (value_type $I128) _ _) targets)
+  (let
+    ( ;; targets
+      (taken JumpTarget (jump_target targets 0))
+      (not_taken JumpTarget (jump_target targets 1))
+      ;; comparison
+      (_ Unit (cmp_reg_imm (value_regs_get c 0) (imm15 0)))
+      (_ Unit (cmpb_reg_imm (value_regs_get c 1) (imm15 0)))
+      (_ Unit (cmpb_reg_imm (value_regs_get c 2) (imm15 0)))
+      (_ Unit (cmpb_reg_imm (value_regs_get c 3) (imm15 0))))
     (branch_rel (IntCC.NotEqual) taken not_taken)))
 
 (rule -4
@@ -915,22 +1244,40 @@
 
 ;;;;  Rules for `isplit` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule 
-  (lower (isplit x @ (value_type $I64)))
+(rule
+  (lower (has_type $I32 (isplit x @ (value_type $I64))))
   (let
     ((t1 Reg (move_reg (value_regs_get x 0)))
       (t2 Reg (move_reg (value_regs_get x 1))))
     (output_pair t1 t2)))
 
+(rule
+  (lower (has_type $I64 (isplit x @ (value_type $I128))))
+  (let
+    ( (t1 Reg (move_reg (value_regs_get x 0)))
+      (t2 Reg (move_reg (value_regs_get x 1)))
+      (t3 Reg (move_reg (value_regs_get x 2)))
+      (t4 Reg (move_reg (value_regs_get x 3))))
+    (output_pair (value_regs t1 t2) (value_regs t3 t4))))
+
 
 ;;;;  Rules for `iconcat` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule 
-  (lower (has_type $I64 (iconcat x y)))
+(rule
+  (lower (has_type $I64 (iconcat x @ (value_type $I32) y)))
   (let
     ((t1 Reg (move_reg x))
       (t2 Reg (move_reg y)))
     (value_regs t1 t2)))
+
+(rule
+  (lower (has_type $I128 (iconcat x @ (value_type $I64) y)))
+  (let
+    ( (t1 Reg (move_reg (value_regs_get x 0)))
+      (t2 Reg (move_reg (value_regs_get x 1)))
+      (t3 Reg (move_reg (value_regs_get y 0)))
+      (t4 Reg (move_reg (value_regs_get y 1))))
+    (value_regs_four t1 t2 t3 t4)))
 
 
 ;;;;;  Rules for `bmask` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -942,107 +1289,122 @@
 
 ;;;; Rules for `popcnt` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule 1 (lower (has_type $I8 (popcnt x)))
+(rule (lower (has_type $I8 (popcnt x)))
   (let
     ( ;; extend to 32 bit
       (x_ext Reg (ext_to_32 $false x $I8)))
-    (libcall32_1 (LibCall.PopCnt32) x_ext)))
+    (libcall_1 (LibCall.PopCnt32) $I32 x_ext $I32)))
 
-(rule 1 (lower (has_type $I16 (popcnt x)))
+(rule (lower (has_type $I16 (popcnt x)))
   (let
     ( ;; extend to 32 bit
       (x_ext Reg (ext_to_32 $false x $I16)))
-    (libcall32_1 (LibCall.PopCnt32) x_ext)))
+    (libcall_1 (LibCall.PopCnt32) $I32 x_ext $I32)))
 
-(rule 1 (lower (has_type $I32 (popcnt x)))
-  (libcall32_1 (LibCall.PopCnt32) x))
+(rule (lower (has_type $I32 (popcnt x)))
+  (libcall_1 (LibCall.PopCnt32) $I32 x $I32))
 
 (rule (lower (has_type $I64 (popcnt x)))
-  (libcall64_1 (LibCall.PopCnt64) x))
+  (libcall_1 (LibCall.PopCnt64) $I64 x $I64))
+
+(rule (lower (has_type $I128 (popcnt x)))
+  (libcall_1 (LibCall.PopCnt128) $I128 x $I128))
 
 
 ;;;; Rules for `clz` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule 1 (lower (has_type $I8 (clz x)))
+(rule (lower (has_type $I8 (clz x)))
   (let
     ( ;; extend to 32 bit
       (x_ext Reg (ext_to_32 $false x $I8))
       ;; perform call
-      (count Reg (libcall32_1 (LibCall.Clz32) x_ext)))
-    (alu_reg_imm (AluOP.Sub) count (imm15 24))))
+      (count ValueRegs (libcall_1 (LibCall.Clz32) $I32 x_ext $I32)))
+    (alu_reg_imm (AluOP.Sub) (value_regs_get count 0) (imm15 24))))
 
-(rule 1 (lower (has_type $I16 (clz x)))
+(rule (lower (has_type $I16 (clz x)))
   (let
     ( ;; extend to 32 bit
       (x_ext Reg (ext_to_32 $false x $I16))
       ;; perform call
-      (count Reg (libcall32_1 (LibCall.Clz32) x_ext)))
-    (alu_reg_imm (AluOP.Sub) count (imm15 16))))
+      (count ValueRegs (libcall_1 (LibCall.Clz32) $I32 x_ext $I32)))
+    (alu_reg_imm (AluOP.Sub) (value_regs_get count 0) (imm15 16))))
 
-(rule 1 (lower (has_type $I32 (clz x)))
-  (libcall32_1 (LibCall.Clz32) x))
+(rule (lower (has_type $I32 (clz x)))
+  (libcall_1 (LibCall.Clz32) $I32 x $I32))
 
 (rule (lower (has_type $I64 (clz x)))
-  (libcall64_1 (LibCall.Clz64) x))
+  (libcall_1 (LibCall.Clz64) $I64 x $I64))
+
+(rule (lower (has_type $I128 (clz x)))
+  (libcall_1 (LibCall.Clz128) $I128 x $I128))
 
 
 ;;;; Rules for `ctz` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule 1 (lower (has_type $I8 (ctz x)))
+(rule (lower (has_type $I8 (ctz x)))
   (let
     ( ;; extend to 32 bit
       (x_ext Reg (alu_reg_imm (AluOP.Shl) x (imm15 24)))
       ;; perform call
-      (count Reg (libcall32_1 (LibCall.Ctz32) x_ext)))
-    (alu_reg_imm (AluOP.Sub) count (imm15 24))))
+      (count ValueRegs (libcall_1 (LibCall.Ctz32) $I32 x_ext $I32)))
+    (alu_reg_imm (AluOP.Sub) (value_regs_get count 0) (imm15 24))))
 
-(rule 1 (lower (has_type $I16 (ctz x)))
+(rule (lower (has_type $I16 (ctz x)))
   (let
     ( ;; extend to 32 bit
       (x_ext Reg (alu_reg_imm (AluOP.Shl) x (imm15 16)))
       ;; perform call
-      (count Reg (libcall32_1 (LibCall.Ctz32) x_ext)))
-    (alu_reg_imm (AluOP.Sub) count (imm15 16))))
+      (count ValueRegs (libcall_1 (LibCall.Ctz32) $I32 x_ext $I32)))
+    (alu_reg_imm (AluOP.Sub) (value_regs_get count 0) (imm15 16))))
 
-(rule 1 (lower (has_type $I32 (ctz x)))
-  (libcall32_1 (LibCall.Ctz32) x))
+(rule (lower (has_type $I32 (ctz x)))
+  (libcall_1 (LibCall.Ctz32) $I32 x $I32))
 
 (rule (lower (has_type $I64 (ctz x)))
-  (libcall64_1 (LibCall.Ctz64) x))
+  (libcall_1 (LibCall.Ctz64) $I64 x $I64))
+
+(rule (lower (has_type $I128 (ctz x)))
+  (libcall_1 (LibCall.Ctz128) $I128 x $I128))
 
 
 ;;;; Rules for `cls` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule 1 (lower (has_type $I8 (cls x)))
+(rule (lower (has_type $I8 (cls x)))
   (let
     ( ;; extend to 32 bit
       (x_ext Reg (ext_to_32 $true x $I8))
       ;; perform call
-      (count Reg (libcall32_1 (LibCall.Cls32) x_ext)))
-    (alu_reg_imm (AluOP.Sub) count (imm15 24))))
+      (count ValueRegs (libcall_1 (LibCall.Cls32) $I32 x_ext $I32)))
+    (alu_reg_imm (AluOP.Sub) (value_regs_get count 0) (imm15 24))))
 
-(rule 1 (lower (has_type $I16 (cls x)))
+(rule (lower (has_type $I16 (cls x)))
   (let
     ( ;; extend to 32 bit
       (x_ext Reg (ext_to_32 $true x $I16))
       ;; perform call
-      (count Reg (libcall32_1 (LibCall.Cls32) x_ext)))
-    (alu_reg_imm (AluOP.Sub) count (imm15 16))))
+      (count ValueRegs (libcall_1 (LibCall.Cls32) $I32 x_ext $I32)))
+    (alu_reg_imm (AluOP.Sub) (value_regs_get count 0) (imm15 16))))
 
-(rule 1 (lower (has_type $I32 (cls x)))
-  (libcall32_1 (LibCall.Cls32) x))
+(rule (lower (has_type $I32 (cls x)))
+  (libcall_1 (LibCall.Cls32) $I32 x $I32))
 
 (rule (lower (has_type $I64 (cls x)))
-  (libcall64_1 (LibCall.Cls64) x))
+  (libcall_1 (LibCall.Cls64) $I64 x $I64))
+
+(rule (lower (has_type $I128 (cls x)))
+  (libcall_1 (LibCall.Cls128) $I128 x $I128))
 
 
 ;;;; Rules for `bitrev` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule 1 (lower (has_type $I32 (bitrev x)))
-  (libcall32_1 (LibCall.Brev32) x))
+(rule (lower (has_type $I32 (bitrev x)))
+  (libcall_1 (LibCall.Brev32) $I32 x $I32))
 
 (rule (lower (has_type $I64 (bitrev x)))
-  (libcall64_1 (LibCall.Brev64) x))
+  (libcall_1 (LibCall.Brev64) $I64 x $I64))
+
+(rule (lower (has_type $I128 (bitrev x)))
+  (libcall_1 (LibCall.Brev128) $I128 x $I128))
 
 
 ;;;;;  Rules for `stack_addr` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1137,8 +1499,16 @@
 ;;;;;  Rules for `ireduce` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (rule -1
-  (lower (has_type ty (ireduce x @ (value_type $I64))))
+  (lower (has_type (fits_in_32 ty) (ireduce x @ (value_type $I64))))
   (value_regs_get x 0))
+
+(rule -1
+  (lower (has_type (fits_in_32 ty) (ireduce x @ (value_type $I128))))
+  (value_regs_get x 0))
+
+(rule -2
+  (lower (has_type $I64 (ireduce x @ (value_type $I128))))
+  (value_regs (value_regs_get x 0) (value_regs_get x 1)))
 
 (rule -4 (lower (has_type ty (ireduce x))) x)
 
@@ -1146,31 +1516,37 @@
 ;;;; Rules for `rotl` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (rule (lower (has_type $I8 (rotl x y)))
-  (lower_i8_rotl x y))
+  (lower_i8_rotl x (value_regs_get y 0)))
 
 (rule (lower (has_type $I16 (rotl x y)))
-  (lower_i16_rotl x y))
+  (lower_i16_rotl x (value_regs_get y 0)))
 
 (rule (lower (has_type $I32 (rotl x y)))
-  (lower_i32_rotl x y))
+  (lower_i32_rotl x (value_regs_get y 0)))
 
 (rule (lower (has_type $I64 (rotl x y)))
   (lower_i64_rotl x y))
+
+(rule (lower (has_type $I128 (rotl x y)))
+  (libcall_2 (LibCall.Rotl128) $I128 x $I8 (value_regs_get y 0) $I128))
 
 
 ;;;; Rules for `rotr` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (rule (lower (has_type $I8 (rotr x y)))
-  (lower_i8_rotr x y))
+  (lower_i8_rotr x (value_regs_get y 0)))
 
 (rule (lower (has_type $I16 (rotr x y)))
-  (lower_i16_rotr x y))
+  (lower_i16_rotr x (value_regs_get y 0)))
 
 (rule (lower (has_type $I32 (rotr x y)))
-  (lower_i32_rotr x y))
+  (lower_i32_rotr x (value_regs_get y 0)))
 
 (rule (lower (has_type $I64 (rotr x y)))
   (lower_i64_rotr x y))
+
+(rule (lower (has_type $I128 (rotr x y)))
+  (libcall_2 (LibCall.Rotr128) $I128 x $I8 (value_regs_get y 0) $I128))
 
 
 
@@ -1186,3 +1562,303 @@
 ;;        (lower (has_type ty (bitselect c x y)))
 ;;        (gen_bitselect ty c x y))
 ;;      
+
+
+
+
+
+
+
+
+
+;;;; Rules for `fconst` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule (lower (f32const (u64_from_ieee32 n)))
+  (load_imm32 $I32 n))
+
+(rule (lower (f64const (u64_from_ieee64 n)))
+  (load_imm64 n))
+
+
+;;;; Rules for float ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule (lower (has_type $F32 (fadd x y)))
+  (libcall_2 (LibCall.AddF32) $F32 x $F32 y $F32))
+
+(rule (lower (has_type $F64 (fadd x y)))
+  (libcall_2 (LibCall.AddF64) $F64 x $F64 y $F64))
+
+(rule (lower (has_type $F32 (fsub x y)))
+  (libcall_2 (LibCall.SubF32) $F32 x $F32 y $F32))
+
+(rule (lower (has_type $F64 (fsub x y)))
+  (libcall_2 (LibCall.SubF64) $F64 x $F64 y $F64))
+
+(rule (lower (has_type $F32 (fmul x y)))
+  (libcall_2 (LibCall.MulF32) $F32 x $F32 y $F32))
+
+(rule (lower (has_type $F64 (fmul x y)))
+  (libcall_2 (LibCall.MulF64) $F64 x $F64 y $F64))
+
+(rule (lower (has_type $F32 (fdiv x y)))
+  (libcall_2 (LibCall.DivF32) $F32 x $F32 y $F32))
+
+(rule (lower (has_type $F64 (fdiv x y)))
+  (libcall_2 (LibCall.DivF64) $F64 x $F64 y $F64))
+
+(rule (lower (has_type $F32 (fmin x y)))
+  (libcall_2 (LibCall.MinF32) $F32 x $F32 y $F32))
+
+(rule (lower (has_type $F64 (fmin x y)))
+  (libcall_2 (LibCall.MinF64) $F64 x $F64 y $F64))
+
+(rule (lower (has_type $F32 (fmax x y)))
+  (libcall_2 (LibCall.MaxF32) $F32 x $F32 y $F32))
+
+(rule (lower (has_type $F64 (fmax x y)))
+  (libcall_2 (LibCall.MaxF64) $F64 x $F64 y $F64))
+
+(rule (lower (has_type $F32 (fcopysign x y)))
+  (libcall_2 (LibCall.CopySignF32) $F32 x $F32 y $F32))
+
+(rule (lower (has_type $F64 (fcopysign x y)))
+  (libcall_2 (LibCall.CopySignF64) $F64 x $F64 y $F64))
+
+(rule (lower (has_type $F32 (fneg x)))
+  (libcall_1 (LibCall.NegF32) $F32 x $F32))
+
+(rule (lower (has_type $F64 (fneg x)))
+  (libcall_1 (LibCall.NegF64) $F64 x $F64))
+
+(rule (lower (has_type $F32 (fabs x)))
+  (libcall_1 (LibCall.AbsF32) $F32 x $F32))
+
+(rule (lower (has_type $F64 (fabs x)))
+  (libcall_1 (LibCall.AbsF64) $F64 x $F64))
+
+(rule (lower (has_type $F32 (sqrt x)))
+  (libcall_1 (LibCall.SqrtF32) $F32 x $F32))
+
+(rule (lower (has_type $F64 (sqrt x)))
+  (libcall_1 (LibCall.SqrtF64) $F64 x $F64))
+
+(rule (lower (has_type $F32 (ceil x)))
+  (libcall_1 (LibCall.CeilF32) $F32 x $F32))
+
+(rule (lower (has_type $F64 (ceil x)))
+  (libcall_1 (LibCall.CeilF64) $F64 x $F64))
+
+(rule (lower (has_type $F32 (floor x)))
+  (libcall_1 (LibCall.FloorF32) $F32 x $F32))
+
+(rule (lower (has_type $F64 (floor x)))
+  (libcall_1 (LibCall.FloorF64) $F64 x $F64))
+
+(rule (lower (has_type $F32 (trunc x)))
+  (libcall_1 (LibCall.TruncF32) $F32 x $F32))
+
+(rule (lower (has_type $F64 (trunc x)))
+  (libcall_1 (LibCall.TruncF64) $F64 x $F64))
+
+(rule (lower (has_type $F32 (nearest x)))
+  (libcall_1 (LibCall.NearestF32) $F32 x $F32))
+
+(rule (lower (has_type $F64 (nearest x)))
+  (libcall_1 (LibCall.NearestF64) $F64 x $F64))
+
+(rule (lower (has_type $F32 (fma x y z)))
+  (libcall_3 (LibCall.FmaF32) $F32 x $F32 y $F32 z $F32))
+
+(rule (lower (has_type $F64 (fma x y z)))
+  (libcall_3 (LibCall.FmaF64) $F64 x $F64 y $F64 z $F64))
+
+(rule (lower (has_type $F64 (fpromote x)))
+  (libcall_1 (LibCall.Promote) $F32 x $F64))
+
+(rule (lower (has_type $F32 (fdemote x)))
+  (libcall_1 (LibCall.Demote) $F64 x $F32))
+
+
+;;;; Rules for float-to-int conversion ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule 1 (lower (has_type $I32 (fcvt_to_uint x @ (value_type $F32))))
+  (libcall_1 (LibCall.CvtF32U32) $F32 x $I32))
+
+(rule 1 (lower (has_type $I32 (fcvt_to_sint x @ (value_type $F32))))
+  (libcall_1 (LibCall.CvtF32S32) $F32 x $I32))
+
+(rule 1 (lower (has_type $I64 (fcvt_to_uint x @ (value_type $F32))))
+  (libcall_1 (LibCall.CvtF32U64) $F32 x $I64))
+
+(rule 1 (lower (has_type $I64 (fcvt_to_sint x @ (value_type $F32))))
+  (libcall_1 (LibCall.CvtF32S64) $F32 x $I64))
+
+(rule (lower (has_type $I32 (fcvt_to_uint x @ (value_type $F64))))
+  (libcall_1 (LibCall.CvtF64U32) $F64 x $I32))
+
+(rule (lower (has_type $I32 (fcvt_to_sint x @ (value_type $F64))))
+  (libcall_1 (LibCall.CvtF64S32) $F64 x $I32))
+
+(rule (lower (has_type $I64 (fcvt_to_uint x @ (value_type $F64))))
+  (libcall_1 (LibCall.CvtF64U64) $F64 x $I64))
+
+(rule (lower (has_type $I64 (fcvt_to_sint x @ (value_type $F64))))
+  (libcall_1 (LibCall.CvtF64S64) $F64 x $I64))
+
+(rule 1 (lower (has_type $I32 (fcvt_to_uint_sat x @ (value_type $F32))))
+  (libcall_1 (LibCall.CvtF32U32Sat) $F32 x $I32))
+
+(rule 1 (lower (has_type $I32 (fcvt_to_sint_sat x @ (value_type $F32))))
+  (libcall_1 (LibCall.CvtF32S32Sat) $F32 x $I32))
+
+(rule 1 (lower (has_type $I64 (fcvt_to_uint_sat x @ (value_type $F32))))
+  (libcall_1 (LibCall.CvtF32U64Sat) $F32 x $I64))
+
+(rule 1 (lower (has_type $I64 (fcvt_to_sint_sat x @ (value_type $F32))))
+  (libcall_1 (LibCall.CvtF32S64Sat) $F32 x $I64))
+
+(rule (lower (has_type $I32 (fcvt_to_uint_sat x @ (value_type $F64))))
+  (libcall_1 (LibCall.CvtF64U32Sat) $F64 x $I32))
+
+(rule (lower (has_type $I32 (fcvt_to_sint_sat x @ (value_type $F64))))
+  (libcall_1 (LibCall.CvtF64S32Sat) $F64 x $I32))
+
+(rule (lower (has_type $I64 (fcvt_to_uint_sat x @ (value_type $F64))))
+  (libcall_1 (LibCall.CvtF64U64Sat) $F64 x $I64))
+
+(rule (lower (has_type $I64 (fcvt_to_sint_sat x @ (value_type $F64))))
+  (libcall_1 (LibCall.CvtF64S64Sat) $F64 x $I64))
+
+
+;;;; Rules for int-to-float conversion ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule 1 (lower (has_type $F32 (fcvt_from_uint x @ (value_type $I32))))
+  (libcall_1 (LibCall.CvtU32F32) $I32 x $F32))
+
+(rule 1 (lower (has_type $F32 (fcvt_from_sint x @ (value_type $I32))))
+  (libcall_1 (LibCall.CvtS32F32) $I32 x $F32))
+
+(rule 1 (lower (has_type $F32 (fcvt_from_uint x @ (value_type $I64))))
+  (libcall_1 (LibCall.CvtU64F32) $I64 x $F32))
+
+(rule 1 (lower (has_type $F32 (fcvt_from_sint x @ (value_type $I64))))
+  (libcall_1 (LibCall.CvtS64F32) $I64 x $F32))
+
+(rule (lower (has_type $F64 (fcvt_from_uint x @ (value_type $I32))))
+  (libcall_1 (LibCall.CvtU32F64) $I32 x $F64))
+
+(rule (lower (has_type $F64 (fcvt_from_sint x @ (value_type $I32))))
+  (libcall_1 (LibCall.CvtS32F64) $I32 x $F64))
+
+(rule (lower (has_type $F64 (fcvt_from_uint x @ (value_type $I64))))
+  (libcall_1 (LibCall.CvtU64F64) $I64 x $F64))
+
+(rule (lower (has_type $F64 (fcvt_from_sint x @ (value_type $I64))))
+  (libcall_1 (LibCall.CvtS64F64) $I64 x $F64))
+
+
+;;;; Rules for float comparison ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule 1
+  (lower (fcmp cc x @ (value_type $F32) y))
+  (let
+    ( ;; call comparison function
+      (c ValueRegs (libcall_2 (LibCall.CmpF32) $F32 x $F32 y $I8))
+      ;; perform bit comparison with mask
+      (_ Unit (bit_reg_imm (value_regs_get c 0) (floatcc_mask cc))))
+    (cond_move_reg_imm (IntCC.NotEqual) (zero_reg) (imm15 1))))
+
+(rule
+  (lower (fcmp cc x @ (value_type $F64) y))
+  (let
+    ( ;; call comparison function
+      (c ValueRegs (libcall_2 (LibCall.CmpF64) $F64 x $F64 y $I8))
+      ;; perform bit comparison with mask
+      (_ Unit (bit_reg_imm (value_regs_get c 0) (floatcc_mask cc))))
+    (cond_move_reg_imm (IntCC.NotEqual) (zero_reg) (imm15 1))))
+
+;; `brz` following `fcmp`
+(rule -1
+  (lower_branch (brz (fcmp cc x @ (value_type $F64) y) _ _) targets)
+  (let
+    ( ;; targets
+      (taken JumpTarget (jump_target targets 0))
+      (not_taken JumpTarget (jump_target targets 1))
+      ;; call comparison function
+      (c ValueRegs (libcall_2 (LibCall.CmpF64) $F64 x $F64 y $I8))
+      ;; perform bit comparison with mask
+      (_ Unit (bit_reg_imm (value_regs_get c 0) (floatcc_mask cc))))
+    (branch_rel (IntCC.Equal) taken not_taken)))
+
+(rule -1
+  (lower_branch (brz (fcmp cc x @ (value_type $F32) y) _ _) targets)
+  (let
+    ( ;; targets
+      (taken JumpTarget (jump_target targets 0))
+      (not_taken JumpTarget (jump_target targets 1))
+      ;; call comparison function
+      (c ValueRegs (libcall_2 (LibCall.CmpF32) $F32 x $F32 y $I8))
+      ;; perform bit comparison with mask
+      (_ Unit (bit_reg_imm (value_regs_get c 0) (floatcc_mask cc))))
+    (branch_rel (IntCC.Equal) taken not_taken)))
+
+;; `brnz` following `fcmp`
+(rule -1
+  (lower_branch (brnz (fcmp cc x @ (value_type $F64) y) _ _) targets)
+  (let
+    ( ;; targets
+      (taken JumpTarget (jump_target targets 0))
+      (not_taken JumpTarget (jump_target targets 1))
+      ;; call comparison function
+      (c ValueRegs (libcall_2 (LibCall.CmpF64) $F64 x $F64 y $I8))
+      ;; perform bit comparison with mask
+      (_ Unit (bit_reg_imm (value_regs_get c 0) (floatcc_mask cc))))
+    (branch_rel (IntCC.NotEqual) taken not_taken)))
+
+(rule -1
+  (lower_branch (brnz (fcmp cc x @ (value_type $F32) y) _ _) targets)
+  (let
+    ( ;; targets
+      (taken JumpTarget (jump_target targets 0))
+      (not_taken JumpTarget (jump_target targets 1))
+      ;; call comparison function
+      (c ValueRegs (libcall_2 (LibCall.CmpF32) $F32 x $F32 y $I8))
+      ;; perform bit comparison with mask
+      (_ Unit (bit_reg_imm (value_regs_get c 0) (floatcc_mask cc))))
+    (branch_rel (IntCC.NotEqual) taken not_taken)))
+
+
+;;;; Rules for float load and store ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule (lower (has_type $F32 (load _ base offset)))
+  (load_reg_imm (LoadOP.Ld32) base offset))
+
+(rule
+  (lower (has_type $F64 (load _ base offset)))
+  (let
+    ( ;; low word
+      (low Reg (load_reg_imm (LoadOP.Ld32) base offset))
+      ;; high word
+      (high Reg (load_reg_imm (LoadOP.Ld32) base (add_offset offset 4))))
+    (value_regs low high)))
+
+(rule (lower (store _ x @ (value_type $F32) base offset))
+  (store_reg_imm (StoreOP.St32) x base offset))
+
+(rule (lower (store _ x @ (value_type $F64) base offset))
+  (side_effect (SideEffectNoResult.Inst2
+    ;; low word
+    (MInst.Store (StoreOP.St32) (value_regs_get x 0) (build_amode base offset))
+    ;; high word
+    (MInst.Store (StoreOP.St32) (value_regs_get x 1) (build_amode base (add_offset offset 4))))))
+
+
+;;;; Rules for bitcast ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule (lower (has_type $I32 (bitcast _ x @ (value_type $F32)))) x)
+
+(rule (lower (has_type $F32 (bitcast _ x @ (value_type $I32)))) x)
+
+(rule (lower (has_type $I64 (bitcast _ x @ (value_type $F64)))) x)
+
+(rule (lower (has_type $F64 (bitcast _ x @ (value_type $I64)))) x)

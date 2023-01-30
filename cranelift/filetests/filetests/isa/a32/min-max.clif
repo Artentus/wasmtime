@@ -55,6 +55,24 @@ block0(v0: i64, v1: i64):
 ;   ret
 
 
+function %umin128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = umin.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a4
+;   cmpb a1, a5
+;   cmpb a2, a6
+;   cmpb a3, a7
+;   mv.u.g a0, a0, a4
+;   mv.u.g a1, a1, a5
+;   mv.u.g a2, a2, a6
+;   mv.u.g a3, a3, a7
+;   ret
+
+
 function %umax32(i32, i32) -> i32 {
 block0(v0: i32, v1: i32):
   v2 = umax.i32 v0, v1
@@ -106,6 +124,24 @@ block0(v0: i64, v1: i64):
 ;   cmpb a1, a3
 ;   mv.u.l a0, a0, a2
 ;   mv.u.l a1, a1, a3
+;   ret
+
+
+function %umax128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = umax.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a4
+;   cmpb a1, a5
+;   cmpb a2, a6
+;   cmpb a3, a7
+;   mv.u.l a0, a0, a4
+;   mv.u.l a1, a1, a5
+;   mv.u.l a2, a2, a6
+;   mv.u.l a3, a3, a7
 ;   ret
 
 
@@ -163,6 +199,24 @@ block0(v0: i64, v1: i64):
 ;   ret
 
 
+function %smin128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = smin.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a4
+;   cmpb a1, a5
+;   cmpb a2, a6
+;   cmpb a3, a7
+;   mv.s.g a0, a0, a4
+;   mv.s.g a1, a1, a5
+;   mv.s.g a2, a2, a6
+;   mv.s.g a3, a3, a7
+;   ret
+
+
 function %smax32(i32, i32) -> i32 {
 block0(v0: i32, v1: i32):
   v2 = smax.i32 v0, v1
@@ -214,4 +268,22 @@ block0(v0: i64, v1: i64):
 ;   cmpb a1, a3
 ;   mv.s.l a0, a0, a2
 ;   mv.s.l a1, a1, a3
+;   ret
+
+
+function %smax128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = smax.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   cmp a0, a4
+;   cmpb a1, a5
+;   cmpb a2, a6
+;   cmpb a3, a7
+;   mv.s.l a0, a0, a4
+;   mv.s.l a1, a1, a5
+;   mv.s.l a2, a2, a6
+;   mv.s.l a3, a3, a7
 ;   ret

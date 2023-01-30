@@ -197,6 +197,24 @@ block0(v0: i32):
 ;   ret
 
 
+;;;; LOAD i128
+
+function %load128_i128(i32) -> i128 {
+block0(v0: i32):
+  v1 = load.i128 v0+42
+  return v1
+}
+
+; block0:
+;   ld a2, [a0, 42]
+;   mov a6, a2
+;   ld a1, [a0, 46]
+;   ld a2, [a0, 50]
+;   ld a3, [a0, 54]
+;   mov a0, a6
+;   ret
+
+
 ;;;; STORE i8
 
 function %store16_i8(i32, i8) {
@@ -313,4 +331,20 @@ block0(v0: i32, v1: i64):
 ; block0:
 ;   st [a0, 42], a1
 ;   st [a0, 46], a2
+;   ret
+
+
+;;;; STORE i128
+
+function %store128_i128(i32, i128) {
+block0(v0: i32, v1: i128):
+  store.i128 v1, v0+42
+  return
+}
+
+; block0:
+;   st [a0, 42], a1
+;   st [a0, 46], a2
+;   st [a0, 50], a3
+;   st [a0, 54], a4
 ;   ret

@@ -285,7 +285,11 @@
                                  (inst2 MInst))
                           (Inst3 (inst1 MInst)
                                  (inst2 MInst)
-                                 (inst3 MInst))))
+                                 (inst3 MInst))
+                          (Inst4 (inst1 MInst)
+                                 (inst2 MInst)
+                                 (inst3 MInst)
+                                 (inst4 MInst))))
 
 ;; Emit given side-effectful instruction.
 (decl emit_side_effect (SideEffectNoResult) Unit)
@@ -298,6 +302,11 @@
       (let ((_ Unit (emit inst1))
             (_ Unit (emit inst2)))
         (emit inst3)))
+(rule (emit_side_effect (SideEffectNoResult.Inst4 inst1 inst2 inst3 inst4))
+      (let ((_ Unit (emit inst1))
+            (_ Unit (emit inst2))
+            (_ Unit (emit inst3)))
+        (emit inst4)))
 
 ;; Create an empty `InstOutput`, but do emit the given side-effectful
 ;; instruction.

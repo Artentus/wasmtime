@@ -48,6 +48,20 @@ block0(v0: i64, v1: i64):
 ;   ret
 
 
+function %add128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = iadd.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   add a0, a0, a4
+;   addc a1, a1, a5
+;   addc a2, a2, a6
+;   addc a3, a3, a7
+;   ret
+
+
 ;;;; SUB
 
 function %sub32(i32, i32) -> i32 {
@@ -92,6 +106,20 @@ block0(v0: i64, v1: i64):
 ; block0:
 ;   sub a0, a0, a2
 ;   subb a1, a1, a3
+;   ret
+
+
+function %sub128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = isub.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   sub a0, a0, a4
+;   subb a1, a1, a5
+;   subb a2, a2, a6
+;   subb a3, a3, a7
 ;   ret
 
 
@@ -142,6 +170,20 @@ block0(v0: i64, v1: i64):
 ;   ret
 
 
+function %and128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = band.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   and a0, a0, a4
+;   and a1, a1, a5
+;   and a2, a2, a6
+;   and a3, a3, a7
+;   ret
+
+
 ;;;; OR
 
 function %or32(i32, i32) -> i32 {
@@ -189,6 +231,20 @@ block0(v0: i64, v1: i64):
 ;   ret
 
 
+function %or128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = bor.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   or a0, a0, a4
+;   or a1, a1, a5
+;   or a2, a2, a6
+;   or a3, a3, a7
+;   ret
+
+
 ;;;; XOR
 
 function %xor32(i32, i32) -> i32 {
@@ -233,6 +289,20 @@ block0(v0: i64, v1: i64):
 ; block0:
 ;   xor a0, a0, a2
 ;   xor a1, a1, a3
+;   ret
+
+
+function %xor128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = bxor.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   xor a0, a0, a4
+;   xor a1, a1, a5
+;   xor a2, a2, a6
+;   xor a3, a3, a7
 ;   ret
 
 
@@ -296,6 +366,18 @@ block0(v0: i64, v1: i64):
 ;   ret
 
 
+function %shl128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = ishl.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym t5, %Shl128+0
+;   call_ind t5
+;   ret
+
+
 ;;;; USHR
 
 function %ushr32(i32, i32) -> i32 {
@@ -353,6 +435,18 @@ block0(v0: i64, v1: i64):
 ;   cmp a5, zero
 ;   mv.eq a1, a6, a1
 ;   mv.eq a0, a7, a0
+;   ret
+
+
+function %ushr128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = ushr.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym t5, %UShr128+0
+;   call_ind t5
 ;   ret
 
 
@@ -418,6 +512,18 @@ block0(v0: i64, v1: i64):
 ;   ret
 
 
+function %sshr128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = sshr.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym t5, %SShr128+0
+;   call_ind t5
+;   ret
+
+
 ;;;; MUL
 
 function %mul32(i32, i32) -> i32 {
@@ -468,6 +574,18 @@ block0(v0: i64, v1: i64):
 ;   add t5, a7, t1
 ;   add a1, t5, t3
 ;   mov a0, t4
+;   ret
+
+
+function %mul128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = imul.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym t5, %Mul128+0
+;   call_ind t5
 ;   ret
 
 
@@ -573,6 +691,18 @@ block0(v0: i64, v1: i64):
 ;   ret
 
 
+function %udiv128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = udiv.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym t5, %UDiv128+0
+;   call_ind t5
+;   ret
+
+
 ;;;; SDIV
 
 function %sdiv32(i32, i32) -> i32 {
@@ -596,6 +726,18 @@ block0(v0: i64, v1: i64):
 ; block0:
 ;   load_sym a7, %SDiv64+0
 ;   call_ind a7
+;   ret
+
+
+function %sdiv128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = sdiv.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym t5, %SDiv128+0
+;   call_ind t5
 ;   ret
 
 
@@ -625,6 +767,18 @@ block0(v0: i64, v1: i64):
 ;   ret
 
 
+function %urem128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = urem.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym t5, %URem128+0
+;   call_ind t5
+;   ret
+
+
 ;;;; SREM
 
 function %srem32(i32, i32) -> i32 {
@@ -648,6 +802,18 @@ block0(v0: i64, v1: i64):
 ; block0:
 ;   load_sym a7, %SRem64+0
 ;   call_ind a7
+;   ret
+
+
+function %srem128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = srem.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym t5, %SRem128+0
+;   call_ind t5
 ;   ret
 
 
@@ -698,6 +864,20 @@ block0(v0: i64):
 ;   ret
 
 
+function %neg128(i128) -> i128 {
+block0(v0: i128):
+  v1 = ineg.i128 v0
+  return v1
+}
+
+; block0:
+;   sub a0, zero, a0
+;   subb a1, zero, a1
+;   subb a2, zero, a2
+;   subb a3, zero, a3
+;   ret
+
+
 ;;;; NOT
 
 function %not32(i32) -> i32 {
@@ -742,6 +922,20 @@ block0(v0: i64):
 ; block0:
 ;   xor a0, a0, -1
 ;   xor a1, a1, -1
+;   ret
+
+
+function %not128(i128) -> i128 {
+block0(v0: i128):
+  v1 = bnot.i128 v0
+  return v1
+}
+
+; block0:
+;   xor a0, a0, -1
+;   xor a1, a1, -1
+;   xor a2, a2, -1
+;   xor a3, a3, -1
 ;   ret
 
 
@@ -797,6 +991,24 @@ block0(v0: i64, v1: i64):
 ;   ret
 
 
+function %and_not128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = band_not.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   xor t1, a4, -1
+;   and a0, a0, t1
+;   xor t5, a5, -1
+;   and a1, a1, t5
+;   xor a4, a6, -1
+;   and a2, a2, a4
+;   xor a6, a7, -1
+;   and a3, a3, a6
+;   ret
+
+
 ;;;; OR_NOT
 
 function %or_not32(i32, i32) -> i32 {
@@ -849,6 +1061,24 @@ block0(v0: i64, v1: i64):
 ;   ret
 
 
+function %or_not128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = bor_not.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   xor t1, a4, -1
+;   or a0, a0, t1
+;   xor t5, a5, -1
+;   or a1, a1, t5
+;   xor a4, a6, -1
+;   or a2, a2, a4
+;   xor a6, a7, -1
+;   or a3, a3, a6
+;   ret
+
+
 ;;;; XOR_NOT
 
 function %xor_not32(i32, i32) -> i32 {
@@ -898,6 +1128,24 @@ block0(v0: i64, v1: i64):
 ;   xor a0, a0, a5
 ;   xor t1, a3, -1
 ;   xor a1, a1, t1
+;   ret
+
+
+function %xor_not128(i128, i128) -> i128 {
+block0(v0: i128, v1: i128):
+  v2 = bxor_not.i128 v0, v1
+  return v2
+}
+
+; block0:
+;   xor t1, a4, -1
+;   xor a0, a0, t1
+;   xor t5, a5, -1
+;   xor a1, a1, t5
+;   xor a4, a6, -1
+;   xor a2, a2, a4
+;   xor a6, a7, -1
+;   xor a3, a3, a6
 ;   ret
 
 
@@ -956,4 +1204,23 @@ block0(v0: i64):
 ;   cmp a1, 0
 ;   mv.s.l a0, a0, a3
 ;   mv.s.l a1, a1, a5
+;   ret
+
+
+function %abs128(i128) -> i128 {
+block0(v0: i128):
+  v1 = iabs.i128 v0
+  return v1
+}
+
+; block0:
+;   sub a5, zero, a0
+;   subb a7, zero, a1
+;   subb t1, zero, a2
+;   subb t3, zero, a3
+;   cmp a3, 0
+;   mv.s.l a0, a0, a5
+;   mv.s.l a1, a1, a7
+;   mv.s.l a2, a2, t1
+;   mv.s.l a3, a3, t3
 ;   ret

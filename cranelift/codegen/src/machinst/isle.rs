@@ -733,7 +733,18 @@ macro_rules! isle_prelude_method_helpers {
                         let b = self.temp_writable_reg(slots[1].get_type());
                         Some(WritableValueRegs::two(a, b))
                     }
+                    #[cfg(not(feature = "targets_32_bit"))]
                     _ => panic!("Expected to see one or two slots only from {:?}", arg),
+                    #[cfg(feature = "targets_32_bit")]
+                    4 => {
+                        let a = self.temp_writable_reg(slots[0].get_type());
+                        let b = self.temp_writable_reg(slots[1].get_type());
+                        let c = self.temp_writable_reg(slots[2].get_type());
+                        let d = self.temp_writable_reg(slots[3].get_type());
+                        Some(WritableValueRegs::four(a, b, c, d))
+                    }
+                    #[cfg(feature = "targets_32_bit")]
+                    _ => panic!("Expected to see one, two or four slots only from {:?}", arg),
                 },
                 _ => None,
             }

@@ -1422,10 +1422,17 @@ impl<I: VCodeInst> VRegAllocator<I> {
         let regs: ValueRegs<Reg> = match regclasses {
             &[rc0] => ValueRegs::one(VReg::new(v, rc0).into()),
             &[rc0, rc1] => ValueRegs::two(VReg::new(v, rc0).into(), VReg::new(v + 1, rc1).into()),
-            // We can extend this if/when we support 32-bit targets; e.g.,
-            // an i128 on a 32-bit machine will need up to four machine regs
-            // for a `Value`.
+            #[cfg(not(feature = "targets_32_bit"))]
             _ => panic!("Value must reside in 1 or 2 registers"),
+            #[cfg(feature = "targets_32_bit")]
+            &[rc0, rc1, rc2, rc3] => ValueRegs::four(
+                VReg::new(v, rc0).into(),
+                VReg::new(v + 1, rc1).into(),
+                VReg::new(v + 2, rc2).into(),
+                VReg::new(v + 3, rc3).into(),
+            ),
+            #[cfg(feature = "targets_32_bit")]
+            _ => panic!("Value must reside in 1, 2 or 4 registers"),
         };
         for (&reg_ty, &reg) in tys.iter().zip(regs.regs().iter()) {
             self.set_vreg_type(reg.to_virtual_reg().unwrap(), reg_ty);

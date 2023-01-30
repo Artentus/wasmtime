@@ -89,7 +89,7 @@ impl ABIMachineSpec for A32MachineDeps {
         let regs: &[regalloc2::PReg] = match args_or_rets {
             ArgsOrRets::Args => &[P_A0, P_A1, P_A2, P_A3, P_A4, P_A5, P_A6, P_A7],
             ArgsOrRets::Rets if call_conv.extends_wasmtime() => &[P_A0],
-            ArgsOrRets::Rets => &[P_A0, P_A1],
+            ArgsOrRets::Rets => &[P_A0, P_A1, P_A2, P_A3],
         };
         let mut regs = regs.iter().copied();
 

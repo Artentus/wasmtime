@@ -85,6 +85,11 @@
     (rs Reg)
     (imm Imm15))
 
+  ;; A bitmask comparison with a register source and an immediate source
+  (BitRegImm
+    (rs Reg)
+    (imm Imm15))
+
   ;; Adjusts the stack pointer
   (SPAdj
     (amount i32))
@@ -322,6 +327,9 @@
 
 ;;;; Misc helpers ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(decl value_regs_four (Reg Reg Reg Reg) ValueRegs)
+(extern constructor value_regs_four value_regs_four)
+
 ;; AMode from reg + offset
 (decl build_amode (Reg Offset32) AMode)
 (extern constructor build_amode build_amode)
@@ -338,6 +346,9 @@
 
 (decl gen_stack_addr (StackSlot Offset32) Reg)
 (extern constructor gen_stack_addr gen_stack_addr)
+
+(decl floatcc_mask (FloatCC) Imm15)
+(extern constructor floatcc_mask floatcc_mask)
 
 
 ;;;; Helpers for emitting instructions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -377,6 +388,11 @@
 (decl cmpb_reg_imm (Reg Imm15) Unit)
 (rule (cmpb_reg_imm rs imm)
   (emit (MInst.CmpBRegImm rs imm)))
+
+;; Helper for emitting `MInst.BitRegImm` instructions.
+(decl bit_reg_imm (Reg Imm15) Unit)
+(rule (bit_reg_imm rs imm)
+  (emit (MInst.BitRegImm rs imm)))
 
 ;; Helper for emitting `MInst.Move` instructions.
 (decl move_reg (Reg) Reg)
@@ -686,6 +702,12 @@
 
 (type LibCall extern
   (enum
+    Shl128
+    UShr128
+    SShr128
+    Rotl128
+    Rotr128
+    Mul128
     UDiv32
     SDiv32
     URem32
@@ -694,28 +716,92 @@
     SDiv64
     URem64
     SRem64
+    UDiv128
+    SDiv128
+    URem128
+    SRem128
     PopCnt32
     PopCnt64
+    PopCnt128
     Clz32
     Clz64
+    Clz128
     Ctz32
     Ctz64
+    Ctz128
     Cls32
     Cls64
+    Cls128
     Brev32
-    Brev64))
+    Brev64
+    Brev128
+    AddF32
+    AddF64
+    SubF32
+    SubF64
+    MulF32
+    MulF64
+    DivF32
+    DivF64
+    MinF32
+    MinF64
+    MaxF32
+    MaxF64
+    CopySignF32
+    CopySignF64
+    NegF32
+    NegF64
+    AbsF32
+    AbsF64
+    SqrtF32
+    SqrtF64
+    CeilF32
+    CeilF64
+    FloorF32
+    FloorF64
+    TruncF32
+    TruncF64
+    NearestF32
+    NearestF64
+    FmaF32
+    FmaF64
+    Promote
+    Demote
+    CmpF32
+    CmpF64
+    CvtF32U32
+    CvtF32S32
+    CvtF32U64
+    CvtF32S64
+    CvtF64U32
+    CvtF64S32
+    CvtF64U64
+    CvtF64S64
+    CvtF32U32Sat
+    CvtF32S32Sat
+    CvtF32U64Sat
+    CvtF32S64Sat
+    CvtF64U32Sat
+    CvtF64S32Sat
+    CvtF64U64Sat
+    CvtF64S64Sat
+    CvtU32F32
+    CvtS32F32
+    CvtU64F32
+    CvtS64F32
+    CvtU32F64
+    CvtS32F64
+    CvtU64F64
+    CvtS64F64))
 
-(decl libcall32_1 (LibCall Reg) Reg)
-(extern constructor libcall32_1 libcall32_1)
+(decl libcall_1 (LibCall Type ValueRegs Type) ValueRegs)
+(extern constructor libcall_1 libcall_1)
 
-(decl libcall64_1 (LibCall ValueRegs) ValueRegs)
-(extern constructor libcall64_1 libcall64_1)
+(decl libcall_2 (LibCall Type ValueRegs Type ValueRegs Type) ValueRegs)
+(extern constructor libcall_2 libcall_2)
 
-(decl libcall32_2 (LibCall Reg Reg) Reg)
-(extern constructor libcall32_2 libcall32_2)
-
-(decl libcall64_2 (LibCall ValueRegs ValueRegs) ValueRegs)
-(extern constructor libcall64_2 libcall64_2)
+(decl libcall_3 (LibCall Type ValueRegs Type ValueRegs Type ValueRegs Type) ValueRegs)
+(extern constructor libcall_3 libcall_3)
 
 
 ;;;; Helpers for emitting a jump table ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

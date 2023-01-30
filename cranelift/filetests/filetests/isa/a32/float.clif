@@ -1,0 +1,618 @@
+test compile precise-output
+target a32
+
+function %f1(f32, f32) -> f32 {
+block0(v0: f32, v1: f32):
+  v2 = fadd v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a4, %AddF32+0
+;   call_ind a4
+;   ret
+
+function %f2(f64, f64) -> f64 {
+block0(v0: f64, v1: f64):
+  v2 = fadd v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a7, %AddF64+0
+;   call_ind a7
+;   ret
+
+function %f3(f32, f32) -> f32 {
+block0(v0: f32, v1: f32):
+  v2 = fsub v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a4, %SubF32+0
+;   call_ind a4
+;   ret
+
+function %f4(f64, f64) -> f64 {
+block0(v0: f64, v1: f64):
+  v2 = fsub v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a7, %SubF64+0
+;   call_ind a7
+;   ret
+
+function %f5(f32, f32) -> f32 {
+block0(v0: f32, v1: f32):
+  v2 = fmul v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a4, %MulF32+0
+;   call_ind a4
+;   ret
+
+function %f6(f64, f64) -> f64 {
+block0(v0: f64, v1: f64):
+  v2 = fmul v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a7, %MulF64+0
+;   call_ind a7
+;   ret
+
+function %f7(f32, f32) -> f32 {
+block0(v0: f32, v1: f32):
+  v2 = fdiv v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a4, %DivF32+0
+;   call_ind a4
+;   ret
+
+function %f8(f64, f64) -> f64 {
+block0(v0: f64, v1: f64):
+  v2 = fdiv v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a7, %DivF64+0
+;   call_ind a7
+;   ret
+
+function %f9(f32, f32) -> f32 {
+block0(v0: f32, v1: f32):
+  v2 = fmin v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a4, %MinF32+0
+;   call_ind a4
+;   ret
+
+function %f10(f64, f64) -> f64 {
+block0(v0: f64, v1: f64):
+  v2 = fmin v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a7, %MinF64+0
+;   call_ind a7
+;   ret
+
+function %f11(f32, f32) -> f32 {
+block0(v0: f32, v1: f32):
+  v2 = fmax v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a4, %MaxF32+0
+;   call_ind a4
+;   ret
+
+function %f12(f64, f64) -> f64 {
+block0(v0: f64, v1: f64):
+  v2 = fmax v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a7, %MaxF64+0
+;   call_ind a7
+;   ret
+
+function %f13(f32) -> f32 {
+block0(v0: f32):
+  v1 = sqrt v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %SqrtF32+0
+;   call_ind a3
+;   ret
+
+function %f15(f64) -> f64 {
+block0(v0: f64):
+  v1 = sqrt v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %SqrtF64+0
+;   call_ind a5
+;   ret
+
+function %f16(f32) -> f32 {
+block0(v0: f32):
+  v1 = fabs v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %AbsF32+0
+;   call_ind a3
+;   ret
+
+function %f17(f64) -> f64 {
+block0(v0: f64):
+  v1 = fabs v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %AbsF64+0
+;   call_ind a5
+;   ret
+
+function %f18(f32) -> f32 {
+block0(v0: f32):
+  v1 = fneg v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %NegF32+0
+;   call_ind a3
+;   ret
+
+function %f19(f64) -> f64 {
+block0(v0: f64):
+  v1 = fneg v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %NegF64+0
+;   call_ind a5
+;   ret
+
+function %f20(f32) -> f64 {
+block0(v0: f32):
+  v1 = fpromote.f64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %Promote+0
+;   call_ind a4
+;   ret
+
+function %f21(f64) -> f32 {
+block0(v0: f64):
+  v1 = fdemote.f32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %Demote+0
+;   call_ind a4
+;   ret
+
+function %f22(f32) -> f32 {
+block0(v0: f32):
+  v1 = ceil v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %CeilF32+0
+;   call_ind a3
+;   ret
+
+function %f22(f64) -> f64 {
+block0(v0: f64):
+  v1 = ceil v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %CeilF64+0
+;   call_ind a5
+;   ret
+
+function %f23(f32) -> f32 {
+block0(v0: f32):
+  v1 = floor v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %FloorF32+0
+;   call_ind a3
+;   ret
+
+function %f24(f64) -> f64 {
+block0(v0: f64):
+  v1 = floor v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %FloorF64+0
+;   call_ind a5
+;   ret
+
+function %f25(f32) -> f32 {
+block0(v0: f32):
+  v1 = trunc v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %TruncF32+0
+;   call_ind a3
+;   ret
+
+function %f26(f64) -> f64 {
+block0(v0: f64):
+  v1 = trunc v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %TruncF64+0
+;   call_ind a5
+;   ret
+
+function %f27(f32) -> f32 {
+block0(v0: f32):
+  v1 = nearest v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %NearestF32+0
+;   call_ind a3
+;   ret
+
+function %f28(f64) -> f64 {
+block0(v0: f64):
+  v1 = nearest v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %NearestF64+0
+;   call_ind a5
+;   ret
+
+function %f29(f32, f32, f32) -> f32 {
+block0(v0: f32, v1: f32, v2: f32):
+  v3 = fma v0, v1, v2
+  return v3
+}
+
+; block0:
+;   load_sym a5, %FmaF32+0
+;   call_ind a5
+;   ret
+
+function %f30(f64, f64, f64) -> f64 {
+block0(v0: f64, v1: f64, v2: f64):
+  v3 = fma v0, v1, v2
+  return v3
+}
+
+; block0:
+;   load_sym t1, %FmaF64+0
+;   call_ind t1
+;   ret
+
+function %f31(f32, f32) -> f32 {
+block0(v0: f32, v1: f32):
+  v2 = fcopysign v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a4, %CopySignF32+0
+;   call_ind a4
+;   ret
+
+function %f32(f64, f64) -> f64 {
+block0(v0: f64, v1: f64):
+  v2 = fcopysign v0, v1
+  return v2
+}
+
+; block0:
+;   load_sym a7, %CopySignF64+0
+;   call_ind a7
+;   ret
+
+function %f33(f32) -> i32 {
+block0(v0: f32):
+  v1 = fcvt_to_uint.i32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %CvtF32U32+0
+;   call_ind a3
+;   ret
+
+function %f34(f32) -> i32 {
+block0(v0: f32):
+  v1 = fcvt_to_sint.i32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %CvtF32S32+0
+;   call_ind a3
+;   ret
+
+function %f35(f32) -> i64 {
+block0(v0: f32):
+  v1 = fcvt_to_uint.i64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtF32U64+0
+;   call_ind a4
+;   ret
+
+function %f36(f32) -> i64 {
+block0(v0: f32):
+  v1 = fcvt_to_sint.i64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtF32S64+0
+;   call_ind a4
+;   ret
+
+function %f37(f64) -> i32 {
+block0(v0: f64):
+  v1 = fcvt_to_uint.i32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtF64U32+0
+;   call_ind a4
+;   ret
+
+function %f38(f64) -> i32 {
+block0(v0: f64):
+  v1 = fcvt_to_sint.i32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtF64S32+0
+;   call_ind a4
+;   ret
+
+function %f39(f64) -> i64 {
+block0(v0: f64):
+  v1 = fcvt_to_uint.i64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %CvtF64U64+0
+;   call_ind a5
+;   ret
+
+function %f40(f64) -> i64 {
+block0(v0: f64):
+  v1 = fcvt_to_sint.i64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %CvtF64S64+0
+;   call_ind a5
+;   ret
+
+function %f41(f32) -> i32 {
+block0(v0: f32):
+  v1 = fcvt_to_uint_sat.i32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %CvtF32U32Sat+0
+;   call_ind a3
+;   ret
+
+function %f42(f32) -> i32 {
+block0(v0: f32):
+  v1 = fcvt_to_sint_sat.i32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %CvtF32S32Sat+0
+;   call_ind a3
+;   ret
+
+function %f43(f32) -> i64 {
+block0(v0: f32):
+  v1 = fcvt_to_uint_sat.i64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtF32U64Sat+0
+;   call_ind a4
+;   ret
+
+function %f44(f32) -> i64 {
+block0(v0: f32):
+  v1 = fcvt_to_sint_sat.i64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtF32S64Sat+0
+;   call_ind a4
+;   ret
+
+function %f45(f64) -> i32 {
+block0(v0: f64):
+  v1 = fcvt_to_uint_sat.i32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtF64U32Sat+0
+;   call_ind a4
+;   ret
+
+function %f46(f64) -> i32 {
+block0(v0: f64):
+  v1 = fcvt_to_sint_sat.i32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtF64S32Sat+0
+;   call_ind a4
+;   ret
+
+function %f47(f64) -> i64 {
+block0(v0: f64):
+  v1 = fcvt_to_uint_sat.i64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %CvtF64U64Sat+0
+;   call_ind a5
+;   ret
+
+function %f48(f64) -> i64 {
+block0(v0: f64):
+  v1 = fcvt_to_sint_sat.i64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %CvtF64S64Sat+0
+;   call_ind a5
+;   ret
+
+function %f49(i32) -> f32 {
+block0(v0: i32):
+  v1 = fcvt_from_uint.f32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %CvtU32F32+0
+;   call_ind a3
+;   ret
+
+function %f50(i32) -> f32 {
+block0(v0: i32):
+  v1 = fcvt_from_sint.f32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a3, %CvtS32F32+0
+;   call_ind a3
+;   ret
+
+function %f51(i64) -> f32 {
+block0(v0: i64):
+  v1 = fcvt_from_uint.f32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtU64F32+0
+;   call_ind a4
+;   ret
+
+function %f52(i64) -> f32 {
+block0(v0: i64):
+  v1 = fcvt_from_sint.f32 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtS64F32+0
+;   call_ind a4
+;   ret
+
+function %f53(i32) -> f64 {
+block0(v0: i32):
+  v1 = fcvt_from_uint.f64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtU32F64+0
+;   call_ind a4
+;   ret
+
+function %f54(i32) -> f64 {
+block0(v0: i32):
+  v1 = fcvt_from_sint.f64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a4, %CvtS32F64+0
+;   call_ind a4
+;   ret
+
+function %f55(i64) -> f64 {
+block0(v0: i64):
+  v1 = fcvt_from_uint.f64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %CvtU64F64+0
+;   call_ind a5
+;   ret
+
+function %f56(i64) -> f64 {
+block0(v0: i64):
+  v1 = fcvt_from_sint.f64 v0
+  return v1
+}
+
+; block0:
+;   load_sym a5, %CvtS64F64+0
+;   call_ind a5
+;   ret

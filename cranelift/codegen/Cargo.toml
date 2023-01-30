@@ -65,13 +65,16 @@ trace-log = []
 # This enables unwind info generation functionality.
 unwind = ["gimli"]
 
+# Enables support for 32 bit targets
+targets_32_bit = []
+
 # ISA targets for which we should build.
 # If no ISA targets are explicitly enabled, the ISA target for the host machine is enabled.
 x86 = []
 arm64 = []
 s390x = []
 riscv64 = []
-a32 = []
+a32 = ["targets_32_bit"]
 # Stub feature that does nothing, for Cargo-features compatibility: the new
 # backend is the default now.
 experimental_x64 = []

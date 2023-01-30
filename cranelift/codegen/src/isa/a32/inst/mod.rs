@@ -6,7 +6,7 @@
 
 use crate::binemit::{Addend, CodeOffset, Reloc};
 use crate::ir::condcodes::IntCC;
-use crate::ir::types::{I8, I16, I32, I64, R32};
+use crate::ir::types::{I8, I16, I32, I64, I128, R32, F32, F64};
 pub use crate::ir::{ExternalName, MemFlags, Opcode, SourceLoc, Type, ValueLabel};
 use crate::isa::CallConv;
 use crate::machinst::*;
@@ -275,6 +275,9 @@ impl MachInst for MInst {
             &MInst::CmpBRegImm { rs, .. } => {
                 collector.reg_use(rs);
             }
+            &MInst::BitRegImm { rs, .. } => {
+                collector.reg_use(rs);
+            }
             MInst::SPAdj { .. } => {}
             &MInst::Load { rd, mode, .. } => {
                 if let Some(base) = mode.base() {
@@ -422,7 +425,10 @@ impl MachInst for MInst {
             I16 => Ok((&[RegClass::Int], &[I16])),
             I32 => Ok((&[RegClass::Int], &[I32])),
             I64 => Ok((&[RegClass::Int, RegClass::Int], &[I32, I32])),
+            I128 => Ok((&[RegClass::Int, RegClass::Int, RegClass::Int, RegClass::Int], &[I32, I32, I32, I32])),
             R32 => Ok((&[RegClass::Int], &[R32])),
+            F32 => Ok((&[RegClass::Int], &[I32])),
+            F64 => Ok((&[RegClass::Int, RegClass::Int], &[I32, I32])),
             _ => Err(CodegenError::Unsupported(format!(
                 "Unsupported SSA-value type: {}",
                 ty
@@ -462,7 +468,11 @@ impl MachInst for MInst {
     }
 
     fn is_safepoint(&self) -> bool {
-        matches!(self, MInst::Call { .. } | MInst::CallInd { .. })
+        matches!(self,
+            | MInst::Err { .. }
+            | MInst::Call { .. }
+            | MInst::CallInd { .. }
+        )
     }
 }
 
@@ -599,6 +609,10 @@ impl MInst {
             }
             &MInst::SPAdj { amount } => {
                 format!("sp_adj {:+}", amount)
+            }
+            &MInst::BitRegImm { rs, imm } => {
+                let rs = format_reg(rs, allocs);
+                format!("bit {}, {}", rs, imm)
             }
             &MInst::Load { op, rd, mode } => {
                 let base = mode.pbase_name(allocs);

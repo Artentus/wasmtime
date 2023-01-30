@@ -38,6 +38,33 @@ impl IsleContext<'_, '_, MInst, A32Backend> {
             self.lower_ctx.emit(i.clone());
         }
     }
+
+    fn libcall<const N: usize>(&mut self, libcall: &LibCall, arg_tys: [Type; N], args: [ValueRegs; N], ret_ty: Type) -> ValueRegs {
+        let call_conv = self.lower_ctx.abi().call_conv(self.lower_ctx.sigs());
+        let signature = libcall.signature(call_conv);
+
+        debug_assert_eq!(signature.params.len(), N);
+        for i in 0..N {
+            debug_assert_eq!(signature.params[i].value_type, arg_tys[i]);
+            debug_assert_eq!(args[i].len(), ((arg_tys[i].bits() as usize) / 32).max(1));
+        }
+        debug_assert_eq!(signature.returns.len(), 1);
+        debug_assert_eq!(signature.returns[0].value_type, ret_ty);
+
+        let output_reg = self.lower_ctx.alloc_tmp(ret_ty);
+
+        emit_vm_call(
+            self.lower_ctx,
+            &self.backend.flags,
+            &self.backend.triple,
+            libcall.clone(),
+            &args,
+            &[output_reg],
+        )
+        .expect("Failed to emit LibCall");
+
+        output_reg.map(Writable::to_reg)
+    }
 }
 
 impl generated_code::Context for IsleContext<'_, '_, MInst, A32Backend> {
@@ -159,6 +186,11 @@ impl generated_code::Context for IsleContext<'_, '_, MInst, A32Backend> {
     }
 
     #[inline]
+    fn value_regs_four(&mut self, r1: Reg, r2: Reg, r3: Reg, r4: Reg) -> ValueRegs {
+        ValueRegs::four(r1, r2, r3, r4)
+    }
+
+    #[inline]
     fn build_amode(&mut self, base: Reg, offset: Offset32) -> AMode {
         AMode::RegOffset(base, offset.into())
     }
@@ -194,6 +226,32 @@ impl generated_code::Context for IsleContext<'_, '_, MInst, A32Backend> {
         result.to_reg()
     }
 
+    fn floatcc_mask(&mut self, cc: &FloatCC) -> Imm15 {
+        const UN: u8 = 0x1;
+        const EQ: u8 = 0x2;
+        const LT: u8 = 0x4;
+        const GT: u8 = 0x8;
+
+        let bits = match cc {
+            FloatCC::Ordered => EQ | LT | GT,
+            FloatCC::Unordered => UN,
+            FloatCC::Equal => EQ,
+            FloatCC::NotEqual => UN | LT | GT,
+            FloatCC::OrderedNotEqual => LT | GT,
+            FloatCC::UnorderedOrEqual => UN | EQ,
+            FloatCC::LessThan => LT,
+            FloatCC::LessThanOrEqual => EQ | LT,
+            FloatCC::GreaterThan => GT,
+            FloatCC::GreaterThanOrEqual => EQ | GT,
+            FloatCC::UnorderedOrLessThan => UN | LT,
+            FloatCC::UnorderedOrLessThanOrEqual => UN | EQ | LT,
+            FloatCC::UnorderedOrGreaterThan => UN | GT,
+            FloatCC::UnorderedOrGreaterThanOrEqual => UN | EQ | GT,
+        };
+
+        Imm15::new(bits as i64).unwrap()
+    }
+
     fn load_ext_name(&mut self, name: ExternalName, offset: i64) -> Reg {
         let tmp = self.temp_writable_reg(I32);
         self.emit(&MInst::LoadExtName {
@@ -204,98 +262,16 @@ impl generated_code::Context for IsleContext<'_, '_, MInst, A32Backend> {
         tmp.to_reg()
     }
 
-    fn libcall32_1(&mut self, libcall: &LibCall, a: Reg) -> Reg {
-        let call_conv = self.lower_ctx.abi().call_conv(self.lower_ctx.sigs());
-        let signature = libcall.signature(call_conv);
-        debug_assert_eq!(signature.params.len(), 1);
-        debug_assert_eq!(signature.params[0].value_type, I32);
-        debug_assert_eq!(signature.returns.len(), 1);
-        debug_assert_eq!(signature.returns[0].value_type, I32);
-
-        let output_reg = self.temp_writable_reg(I32);
-
-        emit_vm_call(
-            self.lower_ctx,
-            &self.backend.flags,
-            &self.backend.triple,
-            libcall.clone(),
-            &[ValueRegs::one(a)],
-            &[WritableValueRegs::one(output_reg)],
-        )
-        .expect("Failed to emit LibCall");
-
-        output_reg.to_reg()
+    fn libcall_1(&mut self, libcall: &LibCall, a_ty: Type, a: ValueRegs, ret_ty: Type) -> ValueRegs {
+        self.libcall(libcall, [a_ty], [a], ret_ty)
     }
 
-    fn libcall64_1(&mut self, libcall: &LibCall, a: ValueRegs) -> ValueRegs {
-        let call_conv = self.lower_ctx.abi().call_conv(self.lower_ctx.sigs());
-        let signature = libcall.signature(call_conv);
-        debug_assert_eq!(signature.params.len(), 1);
-        debug_assert_eq!(signature.params[0].value_type, I64);
-        debug_assert_eq!(signature.returns.len(), 1);
-        debug_assert_eq!(signature.returns[0].value_type, I64);
-
-        let output_reg = self.lower_ctx.alloc_tmp(I64);
-
-        emit_vm_call(
-            self.lower_ctx,
-            &self.backend.flags,
-            &self.backend.triple,
-            libcall.clone(),
-            &[a],
-            &[output_reg],
-        )
-        .expect("Failed to emit LibCall");
-
-        ValueRegs::two(output_reg.regs()[0].to_reg(), output_reg.regs()[1].to_reg())
+    fn libcall_2(&mut self, libcall: &LibCall, a_ty: Type, a: ValueRegs, b_ty: Type, b: ValueRegs, ret_ty: Type) -> ValueRegs {
+        self.libcall(libcall, [a_ty, b_ty], [a, b], ret_ty)
     }
 
-    fn libcall32_2(&mut self, libcall: &LibCall, a: Reg, b: Reg) -> Reg {
-        let call_conv = self.lower_ctx.abi().call_conv(self.lower_ctx.sigs());
-        let signature = libcall.signature(call_conv);
-        debug_assert_eq!(signature.params.len(), 2);
-        debug_assert_eq!(signature.params[0].value_type, I32);
-        debug_assert_eq!(signature.params[1].value_type, I32);
-        debug_assert_eq!(signature.returns.len(), 1);
-        debug_assert_eq!(signature.returns[0].value_type, I32);
-
-        let output_reg = self.temp_writable_reg(I32);
-
-        emit_vm_call(
-            self.lower_ctx,
-            &self.backend.flags,
-            &self.backend.triple,
-            libcall.clone(),
-            &[ValueRegs::one(a), ValueRegs::one(b)],
-            &[WritableValueRegs::one(output_reg)],
-        )
-        .expect("Failed to emit LibCall");
-
-        output_reg.to_reg()
-    }
-
-    fn libcall64_2(&mut self, libcall: &LibCall, a: ValueRegs, b: ValueRegs) -> ValueRegs {
-        let call_conv = self.lower_ctx.abi().call_conv(self.lower_ctx.sigs());
-        let signature = libcall.signature(call_conv);
-        debug_assert_eq!(signature.params.len(), 2);
-        debug_assert_eq!(signature.params[0].value_type, I64);
-        debug_assert_eq!(signature.params[1].value_type, I64);
-        debug_assert_eq!(signature.returns.len(), 1);
-        debug_assert_eq!(signature.returns[0].value_type, I64);
-
-        let output_reg = self.lower_ctx.alloc_tmp(I64);
-
-        emit_vm_call(
-            self.lower_ctx,
-            &self.backend.flags,
-            &self.backend.triple,
-            libcall.clone(),
-            &[a, b],
-            &[output_reg],
-        )
-        .expect("Failed to emit LibCall");
-
-        ValueRegs::two(output_reg.regs()[0].to_reg(), output_reg.regs()[1].to_reg())
+    fn libcall_3(&mut self, libcall: &LibCall, a_ty: Type, a: ValueRegs, b_ty: Type, b: ValueRegs, c_ty: Type, c: ValueRegs, ret_ty: Type) -> ValueRegs {
+        self.libcall(libcall, [a_ty, b_ty, c_ty], [a, b, c], ret_ty)
     }
 
     fn lower_jump_table(&mut self, index: ValueRegs, targets: &VecMachLabel) -> Unit {
