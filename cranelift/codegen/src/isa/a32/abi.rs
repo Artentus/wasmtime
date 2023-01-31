@@ -459,13 +459,12 @@ impl ABIMachineSpec for A32MachineDeps {
         defs: CallRetList,
         clobbers: PRegSet,
         opcode: ir::Opcode,
-        tmp: Writable<Reg>,
+        _tmp: Writable<Reg>,
         callee_conv: isa::CallConv,
         caller_conv: isa::CallConv,
     ) -> SmallVec<[Self::I; 2]> {
-        let mut insts = SmallVec::new();
         match dest {
-            CallDest::ExtName(name, RelocDistance::Near) => insts.push(MInst::Call {
+            CallDest::ExtName(name, _) => smallvec![MInst::Call {
                 info: Box::new(CallInfo {
                     dest: name.clone(),
                     uses,
@@ -475,26 +474,8 @@ impl ABIMachineSpec for A32MachineDeps {
                     caller_callconv: caller_conv,
                     callee_callconv: callee_conv,
                 }),
-            }),
-            CallDest::ExtName(name, RelocDistance::Far) => {
-                insts.push(MInst::LoadExtName {
-                    rd: tmp,
-                    name: Box::new(name.clone()),
-                    offset: 0,
-                });
-                insts.push(MInst::CallInd {
-                    info: Box::new(CallIndInfo {
-                        rn: tmp.to_reg(),
-                        uses,
-                        defs,
-                        clobbers,
-                        opcode,
-                        caller_callconv: caller_conv,
-                        callee_callconv: callee_conv,
-                    }),
-                });
-            }
-            &CallDest::Reg(reg) => insts.push(MInst::CallInd {
+            }],
+            &CallDest::Reg(reg) => smallvec![MInst::CallInd {
                 info: Box::new(CallIndInfo {
                     rn: reg,
                     uses,
@@ -504,9 +485,8 @@ impl ABIMachineSpec for A32MachineDeps {
                     caller_callconv: caller_conv,
                     callee_callconv: callee_conv,
                 }),
-            }),
+            }],
         }
-        insts
     }
 
     fn gen_memcpy<F: FnMut(Type) -> Writable<Reg>>(
