@@ -105,7 +105,7 @@ impl MachInstLabelUse for LabelUse {
 
     fn from_reloc(reloc: Reloc, addend: Addend) -> Option<Self> {
         match (reloc, addend) {
-            (Reloc::A32Call, _) => Some(LabelUse::PCRel32),
+            (Reloc::A32Rel, _) => Some(LabelUse::PCRel32),
             _ => None,
         }
     }

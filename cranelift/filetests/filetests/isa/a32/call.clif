@@ -29,11 +29,9 @@ block0(v0: i32):
 }
 
 ; block0:
-;   mov a7, a0
-;   mov t1, a1
+;   mov a2, a0
 ;   ldi a0, 42
 ;   ldi a1, 42
-;   st [t1, 0], a7
 ;   ret
 
 
@@ -103,14 +101,9 @@ block0(v0: i32):
 ;   st [sp, 4], s12
 ;   mov s12, sp
 ; block0:
-;   sp_adj -4
-;   nom_sp_adj +4
-;   load_addr a1, sp+0
-;   load_sym t1, %g+0
-;   call_ind t1
-;   ld a0, [sp, 0]
-;   sp_adj +4
-;   nom_sp_adj -4
+;   load_sym a5, %g+0
+;   call_ind a5
+;   mov a0, a2
 ;   ld ra, [sp, 0]
 ;   ld s12, [sp, 4]
 ;   sp_adj +8
@@ -124,9 +117,7 @@ block0(v0: i32):
 }
 
 ; block0:
-;   mov a7, a0
-;   mov t1, a1
+;   mov a2, a0
 ;   ldi a0, 42
 ;   ldi a1, 42
-;   st [t1, 0], a7
 ;   ret

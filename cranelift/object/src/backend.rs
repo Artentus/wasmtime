@@ -721,7 +721,19 @@ impl ObjectModule {
                     0,
                 )
             }
-            Reloc::A32Call => {
+            Reloc::A32Abs => {
+                assert_eq!(
+                    self.object.format(),
+                    object::BinaryFormat::Elf,
+                    "A32Abs is not supported for this file format"
+                );
+                (
+                    RelocationKind::Elf(object::elf::R_A32_ABS32),
+                    RelocationEncoding::Generic,
+                    0,
+                )
+            }
+            Reloc::A32Rel => {
                 assert_eq!(
                     self.object.format(),
                     object::BinaryFormat::Elf,

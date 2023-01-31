@@ -526,7 +526,7 @@ impl MachInstEmit for MInst {
                     code.add_call_site(info.opcode);
                 }
 
-                code.add_reloc(Reloc::A32Call, &info.dest, 0);
+                code.add_reloc(Reloc::A32Rel, &info.dest, 0);
                 
                 let addpcui = MInst::AddPcUImm { rd: t7_w(), uimm: UImm20::ZERO };
                 let jl = MInst::Jump { link: ra_w(), base: t7(), offset: Imm15::ZERO };
@@ -557,24 +557,12 @@ impl MachInstEmit for MInst {
             } => {
                 let rd = allocs.next_writable(rd);
 
-                // get the current pc
-                let addpcui = MInst::AddPcUImm { rd, uimm: UImm20::ZERO };
-                addpcui.emit(&[], code, emit_info, state);
-
-                // load the value
-                let ld = MInst::Load {
-                    op: LoadOP::Ld32,
-                    rd,
-                    mode: AMode::RegOffset(rd.to_reg(), 8)
-                };
-                ld.emit(&[], code, emit_info, state);
-
-                // jump over
-                let jr = MInst::JumpRel {target: JumpTarget::ResolvedOffset(4) };
-                jr.emit(&[], code, emit_info, state);
-
-                code.add_reloc(Reloc::Abs4, name.as_ref(), offset);
-                code.put4(0);
+                code.add_reloc(Reloc::A32Abs, name, offset);
+                
+                let ldui = MInst::LoadUImm { rd: t7_w(), uimm: UImm20::ZERO };
+                let or = MInst::AluRegImm { op: AluOP::Or, rd, rs: t7(), imm: Imm15::ZERO };
+                ldui.emit(&[], code, emit_info, state);
+                or.emit(&[], code, emit_info, state);
             }
             &MInst::NominalSPAdj { amount } => {
                 state.nominal_sp_offset += amount;

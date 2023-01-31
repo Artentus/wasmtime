@@ -1069,7 +1069,6 @@
   (load_ext_name name 0))
 
 
-
 ;; Variant of the main lowering constructor term, which receives an
 ;; additional argument (a vector of branch targets to be used) for
 ;; implementing branches.
@@ -1547,28 +1546,6 @@
 
 (rule (lower (has_type $I128 (rotr x y)))
   (libcall_2 (LibCall.Rotr128) $I128 x $I8 (value_regs_get y 0) $I128))
-
-
-
-
-
-
-
-
-
-;;      ;;;;;  Rules for `bitselect`;;;;;;;;;
-;;      
-;;      (rule
-;;        (lower (has_type ty (bitselect c x y)))
-;;        (gen_bitselect ty c x y))
-;;      
-
-
-
-
-
-
-
 
 
 ;;;; Rules for `fconst` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

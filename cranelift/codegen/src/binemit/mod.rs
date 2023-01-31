@@ -78,8 +78,10 @@ pub enum Reloc {
     /// s390x TLS GDCall - marker to enable optimization of TLS calls
     S390xTlsGdCall,
 
-    /// A32 PC-relative call
-    A32Call,
+    /// A32 absolute
+    A32Abs,
+    /// A32 PC-relative
+    A32Rel,
 }
 
 impl fmt::Display for Reloc {
@@ -98,7 +100,8 @@ impl fmt::Display for Reloc {
             Self::X86SecRel => write!(f, "SecRel"),
             Self::Arm32Call | Self::Arm64Call => write!(f, "Call"),
             Self::RiscvCall => write!(f, "RiscvCall"),
-            Self::A32Call => write!(f, "A32Rel"),
+            Self::A32Abs => write!(f, "A32Abs"),
+            Self::A32Rel => write!(f, "A32Rel"),
 
             Self::ElfX86_64TlsGd => write!(f, "ElfX86_64TlsGd"),
             Self::MachOX86_64Tlv => write!(f, "MachOX86_64Tlv"),
