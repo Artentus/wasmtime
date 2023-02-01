@@ -211,35 +211,6 @@
     (index Reg)
     (tmp WritableReg)
     (targets VecJumpTarget))
-
-
-;;    ;; select x or y base on condition
-;;    (Select
-;;      (dst VecWritableReg)
-;;      (ty Type)
-;;      (condition Reg)
-;;      (x ValueRegs)
-;;      (y ValueRegs))
-;;
-
-;;
-;;    ;; select a reg base on condition.
-;;    ;; very useful because in lowering stage we can not have condition branch.
-;;    (SelectReg
-;;      (rd WritableReg)
-;;      (rs1 Reg)
-;;      (rs2 Reg)
-;;      (condition IntegerCompare))
-;;    ;;
-;;    
-;;    (SelectIf
-;;      (if_spectre_guard bool)
-;;      (rd VecWritableReg)
-;;      (test Reg)
-;;      (x ValueRegs)
-;;      (y ValueRegs))
-;;    (RawData (data VecU8))
-;;
 ))
 
 

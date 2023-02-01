@@ -390,7 +390,7 @@ pub struct Offset32(i32);
 
 impl Offset32 {
     /// Create a new `Offset32` representing the signed number `x`.
-    pub fn new(x: i32) -> Self {
+    pub const fn new(x: i32) -> Self {
         Self(x)
     }
 
