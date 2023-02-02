@@ -874,11 +874,27 @@
 
 ;;;;;  Rules for `load.i8` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(rule 1
+  (lower (has_type $I8 (load _ (stack_addr ss offset1) offset2)))
+  (gen_ss_load (LoadOP.Ld8) ss offset1 offset2))
+
 (rule (lower (has_type $I8 (load _ base offset)))
   (load_reg_imm (LoadOP.Ld8) base offset))
 
 
 ;;;;;  Rules for `load.i16` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule 1
+  (lower (has_type $I16 (uload8 _ (stack_addr ss offset1) offset2)))
+  (gen_ss_load (LoadOP.Ld8) ss offset1 offset2))
+
+(rule 1
+  (lower (has_type $I16 (sload8 _ (stack_addr ss offset1) offset2)))
+  (gen_ss_load (LoadOP.Ld8S) ss offset1 offset2))
+
+(rule 1
+  (lower (has_type $I16 (load _ (stack_addr ss offset1) offset2)))
+  (gen_ss_load (LoadOP.Ld16) ss offset1 offset2))
 
 (rule (lower (has_type $I16 (uload8 _ base offset)))
   (load_reg_imm (LoadOP.Ld8) base offset))
@@ -891,6 +907,26 @@
 
 
 ;;;;;  Rules for `load.i32` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule 1
+  (lower (has_type $I32 (uload8 _ (stack_addr ss offset1) offset2)))
+  (gen_ss_load (LoadOP.Ld8) ss offset1 offset2))
+
+(rule 1
+  (lower (has_type $I32 (sload8 _ (stack_addr ss offset1) offset2)))
+  (gen_ss_load (LoadOP.Ld8S) ss offset1 offset2))
+
+(rule 1
+  (lower (has_type $I32 (uload16 _ (stack_addr ss offset1) offset2)))
+  (gen_ss_load (LoadOP.Ld16) ss offset1 offset2))
+
+(rule 1
+  (lower (has_type $I32 (sload16 _ (stack_addr ss offset1) offset2)))
+  (gen_ss_load (LoadOP.Ld16S) ss offset1 offset2))
+
+(rule 1
+  (lower (has_type $I32 (load _ (stack_addr ss offset1) offset2)))
+  (gen_ss_load (LoadOP.Ld32) ss offset1 offset2))
 
 (rule (lower (has_type $I32 (uload8 _ base offset)))
   (load_reg_imm (LoadOP.Ld8) base offset))
@@ -909,6 +945,72 @@
 
 
 ;;;;;  Rules for `load.i64` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule 1
+  (lower (has_type $I64 (uload8 _ (stack_addr ss offset1) offset2)))
+  (let
+    ( ;; low word
+      (low Reg (gen_ss_load (LoadOP.Ld8) ss offset1 offset2))
+      ;; high word
+      (high Reg (load_imm (imm15 0))))
+    (value_regs low high)))
+
+(rule 1
+  (lower (has_type $I64 (sload8 _ (stack_addr ss offset1) offset2)))
+  (let
+    ( ;; low word
+      (low Reg (gen_ss_load (LoadOP.Ld8S) ss offset1 offset2))
+      ;; high word
+      (_ Unit (cmp_reg_imm low (imm15 0)))
+      (high Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1))))
+    (value_regs low high)))
+
+(rule 1
+  (lower (has_type $I64 (uload16 _ (stack_addr ss offset1) offset2)))
+  (let
+    ( ;; low word
+      (low Reg (gen_ss_load (LoadOP.Ld16) ss offset1 offset2))
+      ;; high word
+      (high Reg (load_imm (imm15 0))))
+    (value_regs low high)))
+
+(rule 1
+  (lower (has_type $I64 (sload16 _ (stack_addr ss offset1) offset2)))
+  (let
+    ( ;; low word
+      (low Reg (gen_ss_load (LoadOP.Ld16S) ss offset1 offset2))
+      ;; high word
+      (_ Unit (cmp_reg_imm low (imm15 0)))
+      (high Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1))))
+    (value_regs low high)))
+
+(rule 1
+  (lower (has_type $I64 (uload32 _ (stack_addr ss offset1) offset2)))
+  (let
+    ( ;; low word
+      (low Reg (gen_ss_load (LoadOP.Ld32) ss offset1 offset2))
+      ;; high word
+      (high Reg (load_imm (imm15 0))))
+    (value_regs low high)))
+
+(rule 1
+  (lower (has_type $I64 (sload32 _ (stack_addr ss offset1) offset2)))
+  (let
+    ( ;; low word
+      (low Reg (gen_ss_load (LoadOP.Ld32) ss offset1 offset2))
+      ;; high word
+      (_ Unit (cmp_reg_imm low (imm15 0)))
+      (high Reg (cond_move_reg_imm (IntCC.SignedLessThan) (zero_reg) (imm15 -1))))
+    (value_regs low high)))
+
+(rule 1
+  (lower (has_type $I64 (load _ (stack_addr ss offset1) offset2)))
+  (let
+    ( ;; low word
+      (low Reg (gen_ss_load (LoadOP.Ld32) ss offset1 offset2))
+      ;; high word
+      (high Reg (gen_ss_load (LoadOP.Ld32) ss offset1 (add_offset offset2 4))))
+    (value_regs low high)))
 
 (rule
   (lower (has_type $I64 (uload8 _ base offset)))
@@ -979,6 +1081,15 @@
 
 ;;;;;  Rules for `load.i128` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(rule 1
+  (lower (has_type $I128 (load _ (stack_addr ss offset1) offset2)))
+  (let
+    ( (r1 Reg (gen_ss_load (LoadOP.Ld32) ss offset1 offset2))
+      (r2 Reg (gen_ss_load (LoadOP.Ld32) ss offset1 (add_offset offset2 4)))
+      (r3 Reg (gen_ss_load (LoadOP.Ld32) ss offset1 (add_offset offset2 8)))
+      (r4 Reg (gen_ss_load (LoadOP.Ld32) ss offset1 (add_offset offset2 12))))
+    (value_regs_four r1 r2 r3 r4)))
+
 (rule
   (lower (has_type $I128 (load _ base offset)))
   (let
@@ -991,11 +1102,23 @@
 
 ;;;;  Rules for `store.i8` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+(rule 1
+  (lower (store _ x @ (value_type $I8) (stack_addr ss offset1) offset2))
+  (gen_ss_store (StoreOP.St8) ss offset1 offset2 x))
+
 (rule (lower (store _ x @ (value_type $I8) base offset))
   (store_reg_imm (StoreOP.St8) x base offset))
 
 
 ;;;;  Rules for `store.i16` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule 1
+  (lower (istore8 _ x @ (value_type $I16) (stack_addr ss offset1) offset2))
+  (gen_ss_store (StoreOP.St8) ss offset1 offset2 x))
+
+(rule 1
+  (lower (store _ x @ (value_type $I16) (stack_addr ss offset1) offset2))
+  (gen_ss_store (StoreOP.St16) ss offset1 offset2 x))
 
 (rule (lower (istore8 _ x @ (value_type $I16) base offset))
   (store_reg_imm (StoreOP.St8) x base offset))
@@ -1005,6 +1128,18 @@
 
 
 ;;;;  Rules for `store.i32` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule 1
+  (lower (istore8 _ x @ (value_type $I32) (stack_addr ss offset1) offset2))
+  (gen_ss_store (StoreOP.St8) ss offset1 offset2 x))
+
+(rule 1
+  (lower (istore16 _ x @ (value_type $I32) (stack_addr ss offset1) offset2))
+  (gen_ss_store (StoreOP.St16) ss offset1 offset2 x))
+
+(rule 1
+  (lower (store _ x @ (value_type $I32) (stack_addr ss offset1) offset2))
+  (gen_ss_store (StoreOP.St32) ss offset1 offset2 x))
 
 (rule (lower (istore8 _ x @ (value_type $I32) base offset))
   (store_reg_imm (StoreOP.St8) x base offset))
@@ -1017,6 +1152,24 @@
 
 
 ;;;;  Rules for `store.i64` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule 1
+  (lower (istore8 _ x @ (value_type $I64) (stack_addr ss offset1) offset2))
+  (gen_ss_store (StoreOP.St8) ss offset1 offset2 (value_regs_get x 0)))
+
+(rule 1
+  (lower (istore16 _ x @ (value_type $I64) (stack_addr ss offset1) offset2))
+  (gen_ss_store (StoreOP.St16) ss offset1 offset2 (value_regs_get x 0)))
+
+(rule 1
+  (lower (istore32 _ x @ (value_type $I64) (stack_addr ss offset1) offset2))
+  (gen_ss_store (StoreOP.St32) ss offset1 offset2 (value_regs_get x 0)))
+
+(rule 1
+  (lower (store _ x @ (value_type $I64) (stack_addr ss offset1) offset2))
+  (let
+    ((_ InstOutput (gen_ss_store (StoreOP.St32) ss offset1 offset2 (value_regs_get x 0))))
+    (gen_ss_store (StoreOP.St32) ss offset1 (add_offset offset2 4) (value_regs_get x 1))))
 
 (rule (lower (istore8 _ x @ (value_type $I64) base offset))
   (store_reg_imm (StoreOP.St8) (value_regs_get x 0) base offset))
@@ -1036,6 +1189,14 @@
 
 
 ;;;;  Rules for `store.i128` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(rule 1
+  (lower (store _ x @ (value_type $I128) (stack_addr ss offset1) offset2))
+  (let
+    ( (_ InstOutput (gen_ss_store (StoreOP.St32) ss offset1 offset2 (value_regs_get x 0)))
+      (_ InstOutput (gen_ss_store (StoreOP.St32) ss offset1 (add_offset offset2 4) (value_regs_get x 1)))
+      (_ InstOutput (gen_ss_store (StoreOP.St32) ss offset1 (add_offset offset2 8) (value_regs_get x 2))))
+    (gen_ss_store (StoreOP.St32) ss offset1 (add_offset offset2 12) (value_regs_get x 3))))
 
 (rule (lower (store _ x @ (value_type $I128) base offset))
   (side_effect (SideEffectNoResult.Inst4

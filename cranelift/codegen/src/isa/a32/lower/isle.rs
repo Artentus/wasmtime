@@ -220,7 +220,7 @@ impl generated_code::Context for IsleContext<'_, '_, MInst, A32Backend> {
         let inst = self
             .lower_ctx
             .abi()
-            .sized_stackslot_addr(slot, i64::from(offset) as u32, result);
+            .sized_stackslot_addr(slot, i32::from(offset) as u32, result);
         self.emit(&inst);
 
         result.to_reg()
@@ -250,6 +250,41 @@ impl generated_code::Context for IsleContext<'_, '_, MInst, A32Backend> {
         };
 
         Imm15::new(bits as i64).unwrap()
+    }
+
+    fn gen_ss_load(&mut self, op: &LoadOP, slot: StackSlot, offset1: Offset32, offset2: Offset32) -> Reg {
+        let offset1: i64 = offset1.into();
+        let offset2: i64 = offset2.into();
+        let offset3 = self.lower_ctx.abi().sized_stackslot_offsets()[slot] as i64;
+        let offset = offset1 + offset2 + offset3;
+        let offset = i32::try_from(offset).expect("combined offset overflow");
+
+        let rd = self.temp_writable_reg(I32);
+        let inst = MInst::Load {
+            op: *op,
+            rd,
+            mode: AMode::NominalSPOffset(offset),
+        };
+        self.emit(&inst);
+
+        rd.to_reg()
+    }
+
+    fn gen_ss_store(&mut self, op: &StoreOP, slot: StackSlot, offset1: Offset32, offset2: Offset32, rs: Reg) -> InstOutput {
+        let offset1: i64 = offset1.into();
+        let offset2: i64 = offset2.into();
+        let offset3 = self.lower_ctx.abi().sized_stackslot_offsets()[slot] as i64;
+        let offset = offset1 + offset2 + offset3;
+        let offset = i32::try_from(offset).expect("combined offset overflow");
+
+        let inst = MInst::Store {
+            op: *op,
+            rs,
+            mode: AMode::NominalSPOffset(offset),
+        };
+        self.emit(&inst);
+
+        smallvec![]
     }
 
     fn load_ext_name(&mut self, name: ExternalName, offset: i64) -> Reg {

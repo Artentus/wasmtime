@@ -321,6 +321,12 @@
 (decl floatcc_mask (FloatCC) Imm15)
 (extern constructor floatcc_mask floatcc_mask)
 
+(decl gen_ss_load (LoadOP StackSlot Offset32 Offset32) Reg)
+(extern constructor gen_ss_load gen_ss_load)
+
+(decl gen_ss_store (StoreOP StackSlot Offset32 Offset32 Reg) InstOutput)
+(extern constructor gen_ss_store gen_ss_store)
+
 
 ;;;; Helpers for emitting instructions ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
