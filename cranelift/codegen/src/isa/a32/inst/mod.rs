@@ -49,15 +49,15 @@ impl MachInstLabelUse for LabelUse {
 
     fn max_pos_range(self) -> CodeOffset {
         match self {
-            LabelUse::PCRel22 => (1 << 21) - 1,
-            LabelUse::PCRel32 => (1 << 31) - 1,
+            LabelUse::PCRel22 => (1 << 21) - 8,
+            LabelUse::PCRel32 => (1 << 31) - 8,
         }
     }
 
     fn max_neg_range(self) -> CodeOffset {
         match self {
-            LabelUse::PCRel22 => 1 << 21,
-            LabelUse::PCRel32 => 1 << 31,
+            LabelUse::PCRel22 => (1 << 21) + 4,
+            LabelUse::PCRel32 => (1 << 31) + 4,
         }
     }
 
@@ -72,7 +72,7 @@ impl MachInstLabelUse for LabelUse {
         assert!((use_offset % 4) == 0);
         assert!((label_offset % 4) == 0);
 
-        let offset = (label_offset as i64) - (use_offset as i64);
+        let offset = (label_offset as i64) - ((use_offset + 4) as i64);
         assert!(offset >= -(self.max_neg_range() as i64));
         assert!(offset <= (self.max_pos_range() as i64));
 
