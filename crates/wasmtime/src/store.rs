@@ -95,7 +95,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use wasmtime_runtime::{
     InstanceAllocationRequest, InstanceAllocator, InstanceHandle, ModuleInfo,
-    OnDemandInstanceAllocator, SignalHandler, StorePtr, VMCallerCheckedAnyfunc, VMContext,
+    OnDemandInstanceAllocator, SignalHandler, StorePtr, VMCallerCheckedFuncRef, VMContext,
     VMExternRef, VMExternRefActivationsTable, VMRuntimeLimits, VMSharedSignatureIndex,
     VMTrampoline,
 };
@@ -454,7 +454,7 @@ impl<T> Store<T> {
         // single "default callee" for the entire `Store`. This is then used as
         // part of `Func::call` to guarantee that the `callee: *mut VMContext`
         // is never null.
-        let default_callee = unsafe {
+        let default_callee = {
             let module = Arc::new(wasmtime_environ::Module::default());
             let shim = BareModuleInfo::empty(module).into_traitobj();
             OnDemandInstanceAllocator::default()
@@ -1263,7 +1263,7 @@ impl StoreOpaque {
     /// `self.host_trampolines` we lazily populate `self.host_trampolines` by
     /// iterating over `self.store_data().funcs`, inserting trampolines as we
     /// go. If we find the right trampoline then it's returned.
-    pub fn lookup_trampoline(&mut self, anyfunc: &VMCallerCheckedAnyfunc) -> VMTrampoline {
+    pub fn lookup_trampoline(&mut self, anyfunc: &VMCallerCheckedFuncRef) -> VMTrampoline {
         // First try to see if the `anyfunc` belongs to any module. Each module
         // has its own map of trampolines-per-type-index and the code pointer in
         // the `anyfunc` will enable us to quickly find a module.
@@ -2020,14 +2020,14 @@ impl Drop for StoreOpaque {
         unsafe {
             let allocator = self.engine.allocator();
             let ondemand = OnDemandInstanceAllocator::default();
-            for instance in self.instances.iter() {
+            for instance in self.instances.iter_mut() {
                 if instance.ondemand {
-                    ondemand.deallocate(&instance.handle);
+                    ondemand.deallocate(&mut instance.handle);
                 } else {
-                    allocator.deallocate(&instance.handle);
+                    allocator.deallocate(&mut instance.handle);
                 }
             }
-            ondemand.deallocate(&self.default_caller);
+            ondemand.deallocate(&mut self.default_caller);
 
             // See documentation for these fields on `StoreOpaque` for why they
             // must be dropped in this order.

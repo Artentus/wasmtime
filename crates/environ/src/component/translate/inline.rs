@@ -75,6 +75,10 @@ pub(super) fn run(
     let mut args = HashMap::with_capacity(result.exports.len());
     for init in result.initializers.iter() {
         let (name, ty) = match *init {
+            // Imports of types (which are currently always equality-bounded)
+            // are not required to be specified by the host since it's just for
+            // type information within the component.
+            LocalInitializer::Import(_, TypeDef::Interface(_)) => continue,
             LocalInitializer::Import(name, ty) => (name, ty),
             _ => continue,
         };
@@ -355,6 +359,13 @@ impl<'a> Inliner<'a> {
         use LocalInitializer::*;
 
         match initializer {
+            // Importing a type into a component is ignored. All type imports
+            // are equality-bound right now which means that it's purely
+            // informational name about the type such as a name to assign it.
+            // Otherwise type imports have no effect on runtime or such, so skip
+            // them.
+            Import(_, TypeDef::Interface(_)) => {}
+
             // When a component imports an item the actual definition of the
             // item is looked up here (not at runtime) via its name. The
             // arguments provided in our `InlinerFrame` describe how each
@@ -378,12 +389,7 @@ impl<'a> Inliner<'a> {
                 ComponentItemDef::Func(i) => {
                     frame.component_funcs.push(i.clone());
                 }
-
-                // The type structure of a component does not change depending
-                // on how it is instantiated at this time so importing a type
-                // does not affect the component being instantiated so it's
-                // ignored.
-                ComponentItemDef::Type(_ty) => {}
+                ComponentItemDef::Type(_ty) => unreachable!(),
             },
 
             // Lowering a component function to a core wasm function is
@@ -683,9 +689,10 @@ impl<'a> Inliner<'a> {
                             TypeDef::Component(_) => {
                                 unimplemented!("aliasing component export of component import")
                             }
-                            TypeDef::Interface(_) => {
-                                unimplemented!("aliasing type export of component import")
-                            }
+
+                            // This is handled during the initial translation
+                            // pass and doesn't need further handling here.
+                            TypeDef::Interface(_) => {}
 
                             // not possible with valid components
                             TypeDef::CoreFunc(_) => unreachable!(),
@@ -731,6 +738,29 @@ impl<'a> Inliner<'a> {
             AliasComponent(idx) => {
                 frame.components.push(frame.closed_over_component(idx));
             }
+
+            Export(item) => match item {
+                ComponentItem::Func(i) => {
+                    frame
+                        .component_funcs
+                        .push(frame.component_funcs[*i].clone());
+                }
+                ComponentItem::Module(i) => {
+                    frame.modules.push(frame.modules[*i].clone());
+                }
+                ComponentItem::Component(i) => {
+                    frame.components.push(frame.components[*i].clone());
+                }
+                ComponentItem::ComponentInstance(i) => {
+                    frame
+                        .component_instances
+                        .push(frame.component_instances[*i].clone());
+                }
+
+                // Type index spaces aren't maintained during this inlining pass
+                // so ignore this.
+                ComponentItem::Type(_) => {}
+            },
         }
 
         Ok(None)
@@ -1021,7 +1051,7 @@ impl<'a> ComponentItemDef<'a> {
             // FIXME(#4283) should commit one way or another to how this
             // should be treated.
             TypeDef::Component(_ty) => bail!("root-level component imports are not supported"),
-            TypeDef::Interface(_ty) => unimplemented!("import of a type"),
+            TypeDef::Interface(ty) => ComponentItemDef::Type(TypeDef::Interface(ty)),
             TypeDef::CoreFunc(_ty) => unreachable!(),
         };
         Ok(item)

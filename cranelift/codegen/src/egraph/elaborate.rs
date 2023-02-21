@@ -6,8 +6,7 @@ use super::domtree::DomTreeWithChildren;
 use super::Stats;
 use crate::dominator_tree::DominatorTree;
 use crate::fx::FxHashSet;
-use crate::ir::ValueDef;
-use crate::ir::{Block, Function, Inst, Value};
+use crate::ir::{Block, Function, Inst, Value, ValueDef};
 use crate::loop_analysis::{Loop, LoopAnalysis, LoopLevel};
 use crate::scoped_hash_map::ScopedHashMap;
 use crate::trace;
@@ -15,7 +14,6 @@ use crate::unionfind::UnionFind;
 use alloc::vec::Vec;
 use cranelift_entity::{packed_option::ReservedValue, SecondaryMap};
 use smallvec::{smallvec, SmallVec};
-use std::ops::Add;
 
 pub(crate) struct Elaborator<'a> {
     func: &'a mut Function,
@@ -228,16 +226,10 @@ impl<'a> Elaborator<'a> {
                     // N.B.: at this point we know that the opcode is
                     // pure, so `pure_op_cost`'s precondition is
                     // satisfied.
-                    let cost = pure_op_cost(inst_data.opcode()).at_level(loop_level.level())
-                        + self
-                            .func
-                            .dfg
-                            .inst_args(inst)
-                            .iter()
-                            .map(|value| best[*value].0)
-                            // Can't use `.sum()` for `Cost` types; do
-                            // an explicit reduce instead.
-                            .fold(Cost::zero(), Cost::add);
+                    let cost = self.func.dfg.inst_values(inst).fold(
+                        pure_op_cost(inst_data.opcode()).at_level(loop_level.level()),
+                        |cost, value| cost + best[value].0,
+                    );
                     best[value] = (cost, value);
                 }
             };
@@ -286,6 +278,14 @@ impl<'a> Elaborator<'a> {
                         before
                     );
 
+                    // Get the best option; we use `value` (latest
+                    // value) here so we have a full view of the
+                    // eclass.
+                    trace!("looking up best value for {}", value);
+                    let (_, best_value) = self.value_to_best_value[value];
+                    debug_assert_ne!(best_value, Value::reserved_value());
+                    trace!("elaborate: value {} -> best {}", value, best_value);
+
                     let remat = if let Some(elab_val) =
                         self.value_to_elaborated_value.get(&canonical_value)
                     {
@@ -295,7 +295,7 @@ impl<'a> Elaborator<'a> {
                         // from another block. If so, ignore the hit
                         // and recompute below.
                         let remat = elab_val.in_block != self.cur_block
-                            && self.remat_values.contains(&canonical_value);
+                            && self.remat_values.contains(&best_value);
                         if !remat {
                             trace!("elaborate: value {} -> {:?}", value, elab_val);
                             self.stats.elaborate_memoize_hit += 1;
@@ -312,19 +312,11 @@ impl<'a> Elaborator<'a> {
                         // Value not available; but still look up
                         // whether it's been flagged for remat because
                         // this affects placement.
-                        let remat = self.remat_values.contains(&canonical_value);
+                        let remat = self.remat_values.contains(&best_value);
                         trace!(" -> not present in map; remat = {}", remat);
                         remat
                     };
                     self.stats.elaborate_memoize_miss += 1;
-
-                    // Get the best option; we use `value` (latest
-                    // value) here so we have a full view of the
-                    // eclass.
-                    trace!("looking up best value for {}", value);
-                    let (_, best_value) = self.value_to_best_value[value];
-                    debug_assert_ne!(best_value, Value::reserved_value());
-                    trace!("elaborate: value {} -> best {}", value, best_value,);
 
                     // Now resolve the value to its definition to see
                     // how we can compute it.
@@ -366,8 +358,7 @@ impl<'a> Elaborator<'a> {
                     // layout. First, enqueue all args to be
                     // elaborated. Push state to receive the results
                     // and later elab this inst.
-                    let args = self.func.dfg.inst_args(inst);
-                    let num_args = args.len();
+                    let num_args = self.func.dfg.inst_values(inst).count();
                     self.elab_stack.push(ElabStackEntry::PendingInst {
                         inst,
                         result_idx,
@@ -375,9 +366,10 @@ impl<'a> Elaborator<'a> {
                         remat,
                         before,
                     });
+
                     // Push args in reverse order so we process the
                     // first arg first.
-                    for &arg in args.iter().rev() {
+                    for arg in self.func.dfg.inst_values(inst).rev() {
                         debug_assert_ne!(arg, Value::reserved_value());
                         self.elab_stack
                             .push(ElabStackEntry::Start { value: arg, before });
@@ -473,11 +465,7 @@ impl<'a> Elaborator<'a> {
                             ));
                             // Determine the instruction at which we
                             // insert in `data.hoist_block`.
-                            let before = self
-                                .func
-                                .layout
-                                .canonical_branch_inst(&self.func.dfg, data.hoist_block)
-                                .unwrap();
+                            let before = self.func.layout.last_inst(data.hoist_block).unwrap();
                             (data.scope_depth as usize, before, data.hoist_block)
                         };
 
@@ -560,10 +548,9 @@ impl<'a> Elaborator<'a> {
                     self.func.layout.insert_inst(inst, before);
 
                     // Update the inst's arguments.
-                    let args_dest = self.func.dfg.inst_args_mut(inst);
-                    for (dest, val) in args_dest.iter_mut().zip(arg_values.iter()) {
-                        *dest = val.value;
-                    }
+                    self.func
+                        .dfg
+                        .overwrite_inst_values(inst, arg_values.into_iter().map(|ev| ev.value));
 
                     // Now that we've consumed the arg values, pop
                     // them off the stack.
@@ -580,7 +567,7 @@ impl<'a> Elaborator<'a> {
         }
     }
 
-    fn elaborate_block(&mut self, idom: Option<Block>, block: Block) {
+    fn elaborate_block(&mut self, elab_values: &mut Vec<Value>, idom: Option<Block>, block: Block) {
         trace!("elaborate_block: block {}", block);
         self.start_block(idom, block);
 
@@ -608,18 +595,19 @@ impl<'a> Elaborator<'a> {
             let before = first_branch.unwrap_or(inst);
             trace!(" -> inserting before {}", before);
 
-            // For each arg of the inst, elaborate its value.
-            for i in 0..self.func.dfg.inst_args(inst).len() {
-                // Don't borrow across the below.
-                let arg = self.func.dfg.inst_args(inst)[i];
-                trace!(" -> arg {}", arg);
+            elab_values.extend(self.func.dfg.inst_values(inst));
+            for arg in elab_values.iter_mut() {
+                trace!(" -> arg {}", *arg);
                 // Elaborate the arg, placing any newly-inserted insts
                 // before `before`. Get the updated value, which may
                 // be different than the original.
-                let arg = self.elaborate_eclass_use(arg, before);
-                trace!("   -> rewrote arg to {:?}", arg);
-                self.func.dfg.inst_args_mut(inst)[i] = arg.value;
+                let new_arg = self.elaborate_eclass_use(*arg, before);
+                trace!("   -> rewrote arg to {:?}", new_arg);
+                *arg = new_arg.value;
             }
+            self.func
+                .dfg
+                .overwrite_inst_values(inst, elab_values.drain(..));
 
             // We need to put the results of this instruction in the
             // map now.
@@ -645,13 +633,18 @@ impl<'a> Elaborator<'a> {
             block: root,
             idom: None,
         });
+
+        // A temporary workspace for elaborate_block, allocated here to maximize the use of the
+        // allocation.
+        let mut elab_values = Vec::new();
+
         while let Some(top) = self.block_stack.pop() {
             match top {
                 BlockStackEntry::Elaborate { block, idom } => {
                     self.block_stack.push(BlockStackEntry::Pop);
                     self.value_to_elaborated_value.increment_depth();
 
-                    self.elaborate_block(idom, block);
+                    self.elaborate_block(&mut elab_values, idom, block);
 
                     // Push children. We are doing a preorder
                     // traversal so we do this after processing this

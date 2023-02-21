@@ -82,6 +82,18 @@ fn gen_instruction_data(formats: &[&InstructionFormat], fmt: &mut Formatter) {
                 } else if format.num_value_operands > 0 {
                     fmtln!(fmt, "args: [Value; {}],", format.num_value_operands);
                 }
+
+                match format.num_block_operands {
+                    0 => (),
+                    1 => fmt.line("destination: ir::BlockCall,"),
+                    2 => fmtln!(
+                        fmt,
+                        "blocks: [ir::BlockCall; {}],",
+                        format.num_block_operands
+                    ),
+                    n => panic!("Too many block operands in instruction: {}", n),
+                }
+
                 for field in &format.imm_fields {
                     fmtln!(fmt, "{}: {},", field.member, field.kind.rust_type);
                 }
@@ -158,8 +170,6 @@ fn gen_arguments_method(formats: &[&InstructionFormat], fmt: &mut Formatter, is_
 /// - `pub fn opcode(&self) -> Opcode`
 /// - `pub fn arguments(&self, &pool) -> &[Value]`
 /// - `pub fn arguments_mut(&mut self, &pool) -> &mut [Value]`
-/// - `pub fn value_list(&self) -> Option<ir::ValueList>`
-/// - `pub fn value_list_mut(&mut self) -> Option<&mut ir::ValueList>`
 /// - `pub fn eq(&self, &other: Self, &pool) -> bool`
 /// - `pub fn hash<H: Hasher>(&self, state: &mut H, &pool)`
 fn gen_instruction_data_impl(formats: &[&InstructionFormat], fmt: &mut Formatter) {
@@ -214,51 +224,6 @@ fn gen_instruction_data_impl(formats: &[&InstructionFormat], fmt: &mut Formatter
         fmt.empty_line();
 
         fmt.doc_comment(r#"
-            The ValueList for the instruction.
-        "#);
-        fmt.line("pub fn value_list(&self) -> Option<ir::ValueList> {");
-        fmt.indent(|fmt| {
-            let mut m = Match::new("*self");
-
-            for format in formats {
-                if format.has_value_list {
-                    m.arm(format!("Self::{}", format.name),
-                    vec!["args", ".."],
-                    "Some(args)".to_string());
-                }
-            }
-
-            m.arm_no_fields("_", "None");
-
-            fmt.add_match(m);
-        });
-        fmt.line("}");
-        fmt.empty_line();
-
-        fmt.doc_comment(r#"
-            A mutable reference to the ValueList for this instruction, if it
-            has one.
-        "#);
-        fmt.line("pub fn value_list_mut(&mut self) -> Option<&mut ir::ValueList> {");
-        fmt.indent(|fmt| {
-            let mut m = Match::new("*self");
-
-            for format in formats {
-                if format.has_value_list {
-                    m.arm(format!("Self::{}", format.name),
-                    vec!["ref mut args", ".."],
-                    "Some(args)".to_string());
-                }
-            }
-
-            m.arm_no_fields("_", "None");
-
-            fmt.add_match(m);
-        });
-        fmt.line("}");
-        fmt.empty_line();
-
-        fmt.doc_comment(r#"
             Compare two `InstructionData` for equality.
 
             This operation requires a reference to a `ValueListPool` to
@@ -295,6 +260,18 @@ fn gen_instruction_data_impl(formats: &[&InstructionFormat], fmt: &mut Formatter
                         None
                     };
 
+                    let blocks_eq = match format.num_block_operands {
+                        0 => None,
+                        1 => {
+                            members.push("destination");
+                            Some("destination1 == destination2")
+                        },
+                        _ => {
+                            members.push("blocks");
+                            Some("blocks1.iter().zip(blocks2.iter()).all(|(a, b)| a.block(pool) == b.block(pool))")
+                        }
+                    };
+
                     for field in &format.imm_fields {
                         members.push(field.member);
                     }
@@ -309,6 +286,9 @@ fn gen_instruction_data_impl(formats: &[&InstructionFormat], fmt: &mut Formatter
                         }
                         if let Some(args_eq) = args_eq {
                             fmtln!(fmt, "&& {}", args_eq);
+                        }
+                        if let Some(blocks_eq) = blocks_eq {
+                            fmtln!(fmt, "&& {}", blocks_eq);
                         }
                     });
                     fmtln!(fmt, "}");
@@ -351,6 +331,18 @@ fn gen_instruction_data_impl(formats: &[&InstructionFormat], fmt: &mut Formatter
                         ("&[]", "0")
                     };
 
+                    let blocks = match format.num_block_operands {
+                        0 => None,
+                        1 => {
+                            members.push("ref destination");
+                            Some(("std::slice::from_ref(destination)", "1"))
+                        }
+                        _ => {
+                            members.push("ref blocks");
+                            Some(("blocks", "blocks.len()"))
+                        }
+                    };
+
                     for field in &format.imm_fields {
                         members.push(field.member);
                     }
@@ -368,6 +360,98 @@ fn gen_instruction_data_impl(formats: &[&InstructionFormat], fmt: &mut Formatter
                         fmt.indent(|fmt| {
                             fmtln!(fmt, "let arg = mapper(arg);");
                             fmtln!(fmt, "::core::hash::Hash::hash(&arg, state);");
+                        });
+                        fmtln!(fmt, "}");
+
+                        if let Some((blocks, len)) = blocks {
+                            fmtln!(fmt, "::core::hash::Hash::hash(&{}, state);", len);
+                            fmtln!(fmt, "for &block in {} {{", blocks);
+                            fmt.indent(|fmt| {
+                                fmtln!(fmt, "::core::hash::Hash::hash(&block.block(pool), state);");
+                                fmtln!(fmt, "for &arg in block.args_slice(pool) {");
+                                fmt.indent(|fmt| {
+                                    fmtln!(fmt, "let arg = mapper(arg);");
+                                    fmtln!(fmt, "::core::hash::Hash::hash(&arg, state);");
+                                });
+                                fmtln!(fmt, "}");
+                            });
+                            fmtln!(fmt, "}");
+                        }
+                    });
+                    fmtln!(fmt, "}");
+                }
+            });
+            fmt.line("}");
+        });
+        fmt.line("}");
+
+                fmt.empty_line();
+
+        fmt.doc_comment(r#"
+            Deep-clone an `InstructionData`, including any referenced lists.
+
+            This operation requires a reference to a `ValueListPool` to
+            clone the `ValueLists`.
+        "#);
+        fmt.line("pub fn deep_clone(&self, pool: &mut ir::ValueListPool) -> Self {");
+        fmt.indent(|fmt| {
+            fmt.line("match *self {");
+            fmt.indent(|fmt| {
+                for format in formats {
+                    let name = format!("Self::{}", format.name);
+                    let mut members = vec!["opcode"];
+
+                    if format.has_value_list {
+                        members.push("ref args");
+                    } else if format.num_value_operands == 1 {
+                        members.push("arg");
+                    } else if format.num_value_operands > 0 {
+                        members.push("args");
+                    }
+
+                    match format.num_block_operands {
+                        0 => {}
+                        1 => {
+                            members.push("destination");
+                        }
+                        _ => {
+                            members.push("blocks");
+                        }
+                    };
+
+                    for field in &format.imm_fields {
+                        members.push(field.member);
+                    }
+                    let members = members.join(", ");
+
+                    fmtln!(fmt, "{}{{{}}} => {{", name, members ); // beware the moustaches
+                    fmt.indent(|fmt| {
+                        fmtln!(fmt, "Self::{} {{", format.name);
+                        fmt.indent(|fmt| {
+                            fmtln!(fmt, "opcode,");
+
+                            if format.has_value_list {
+                                fmtln!(fmt, "args: args.deep_clone(pool),");
+                            } else if format.num_value_operands == 1 {
+                                fmtln!(fmt, "arg,");
+                            } else if format.num_value_operands > 0 {
+                                fmtln!(fmt, "args,");
+                            }
+
+                            match format.num_block_operands {
+                                0 => {}
+                                1 => {
+                                    fmtln!(fmt, "destination: destination.deep_clone(pool),");
+                                }
+                                2 => {
+                                    fmtln!(fmt, "blocks: [blocks[0].deep_clone(pool), blocks[1].deep_clone(pool)],");
+                                }
+                                _ => panic!("Too many block targets in instruction"),
+                            }
+
+                            for field in &format.imm_fields {
+                                fmtln!(fmt, "{},", field.member);
+                            }
                         });
                         fmtln!(fmt, "}");
                     });
@@ -821,6 +905,19 @@ fn gen_member_inits(format: &InstructionFormat, fmt: &mut Formatter) {
         }
         fmtln!(fmt, "args: [{}],", args.join(", "));
     }
+
+    // Block operands
+    match format.num_block_operands {
+        0 => (),
+        1 => fmt.line("destination: block0"),
+        n => {
+            let mut blocks = Vec::new();
+            for i in 0..n {
+                blocks.push(format!("block{}", i));
+            }
+            fmtln!(fmt, "blocks: [{}],", blocks.join(", "));
+        }
+    }
 }
 
 /// Emit a method for creating and inserting an instruction format.
@@ -839,6 +936,9 @@ fn gen_format_constructor(format: &InstructionFormat, fmt: &mut Formatter) {
     for f in &format.imm_fields {
         args.push(format!("{}: {}", f.member, f.kind.rust_type));
     }
+
+    // Then the block operands.
+    args.extend((0..format.num_block_operands).map(|i| format!("block{}: ir::BlockCall", i)));
 
     // Then the value operands.
     if format.has_value_list {
@@ -898,12 +998,7 @@ fn gen_format_constructor(format: &InstructionFormat, fmt: &mut Formatter) {
 /// instruction reference itself for instructions that don't have results.
 fn gen_inst_builder(inst: &Instruction, format: &InstructionFormat, fmt: &mut Formatter) {
     // Construct method arguments.
-    let mut args = vec![if format.has_value_list {
-        "mut self"
-    } else {
-        "self"
-    }
-    .to_string()];
+    let mut args = vec![String::new()];
 
     let mut args_doc = Vec::new();
     let mut rets_doc = Vec::new();
@@ -922,17 +1017,39 @@ fn gen_inst_builder(inst: &Instruction, format: &InstructionFormat, fmt: &mut Fo
 
     let mut tmpl_types = Vec::new();
     let mut into_args = Vec::new();
+    let mut block_args = Vec::new();
     for op in &inst.operands_in {
-        let t = if op.is_immediate() {
-            let t = format!("T{}", tmpl_types.len() + 1);
-            tmpl_types.push(format!("{}: Into<{}>", t, op.kind.rust_type));
-            into_args.push(op.name);
-            t
+        if op.kind.is_block() {
+            args.push(format!("{}_label: {}", op.name, "ir::Block"));
+            args_doc.push(format!(
+                "- {}_label: {}",
+                op.name, "Destination basic block"
+            ));
+
+            args.push(format!("{}_args: {}", op.name, "&[Value]"));
+            args_doc.push(format!("- {}_args: {}", op.name, "Block arguments"));
+
+            block_args.push(op);
         } else {
-            op.kind.rust_type.to_string()
-        };
-        args.push(format!("{}: {}", op.name, t));
-        args_doc.push(format!("- {}: {}", op.name, op.doc()));
+            let t = if op.is_immediate() {
+                let t = format!("T{}", tmpl_types.len() + 1);
+                tmpl_types.push(format!("{}: Into<{}>", t, op.kind.rust_type));
+                into_args.push(op.name);
+                t
+            } else {
+                op.kind.rust_type.to_string()
+            };
+            args.push(format!("{}: {}", op.name, t));
+            args_doc.push(format!("- {}: {}", op.name, op.doc()));
+        }
+    }
+
+    // We need to mutate `self` if this instruction accepts a value list, or will construct
+    // BlockCall values.
+    if format.has_value_list || !block_args.is_empty() {
+        args[0].push_str("mut self");
+    } else {
+        args[0].push_str("self");
     }
 
     for op in &inst.operands_out {
@@ -981,8 +1098,17 @@ fn gen_inst_builder(inst: &Instruction, format: &InstructionFormat, fmt: &mut Fo
     fmtln!(fmt, "fn {} {{", proto);
     fmt.indent(|fmt| {
         // Convert all of the `Into<>` arguments.
-        for arg in &into_args {
+        for arg in into_args {
             fmtln!(fmt, "let {} = {}.into();", arg, arg);
+        }
+
+        // Convert block references
+        for op in block_args {
+            fmtln!(
+                fmt,
+                "let {0} = self.data_flow_graph_mut().block_call({0}_label, {0}_args);",
+                op.name
+            );
         }
 
         // Arguments for instruction constructor.
@@ -1173,6 +1299,41 @@ fn gen_common_isle(
         fmt.empty_line();
     }
 
+    // Generate all of the block arrays we need for `InstructionData` as well as
+    // the constructors and extractors for them.
+    fmt.line(";;;; Block Arrays ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;");
+    fmt.empty_line();
+    let block_array_arities: BTreeSet<_> = formats
+        .iter()
+        .filter(|f| f.num_block_operands > 1)
+        .map(|f| f.num_block_operands)
+        .collect();
+    for n in block_array_arities {
+        fmtln!(fmt, ";; ISLE representation of `[BlockCall; {}]`.", n);
+        fmtln!(fmt, "(type BlockArray{} extern (enum))", n);
+        fmt.empty_line();
+
+        fmtln!(
+            fmt,
+            "(decl block_array_{0} ({1}) BlockArray{0})",
+            n,
+            (0..n).map(|_| "BlockCall").collect::<Vec<_>>().join(" ")
+        );
+
+        fmtln!(
+            fmt,
+            "(extern constructor block_array_{0} pack_block_array_{0})",
+            n
+        );
+
+        fmtln!(
+            fmt,
+            "(extern extractor infallible block_array_{0} unpack_block_array_{0})",
+            n
+        );
+        fmt.empty_line();
+    }
+
     // Generate the extern type declaration for `Opcode`.
     fmt.line(";;;; `Opcode` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;");
     fmt.empty_line();
@@ -1208,6 +1369,13 @@ fn gen_common_isle(
                 } else if format.num_value_operands > 1 {
                     write!(&mut s, " (args ValueArray{})", format.num_value_operands).unwrap();
                 }
+
+                match format.num_block_operands {
+                    0 => (),
+                    1 => write!(&mut s, " (destination BlockCall)").unwrap(),
+                    n => write!(&mut s, " (blocks BlockArray{})", n).unwrap(),
+                }
+
                 for field in &format.imm_fields {
                     write!(
                         &mut s,
@@ -1349,11 +1517,35 @@ fn gen_common_isle(
             let imm_operands: Vec<_> = inst
                 .operands_in
                 .iter()
-                .filter(|o| !o.is_value() && !o.is_varargs())
+                .filter(|o| !o.is_value() && !o.is_varargs() && !o.kind.is_block())
                 .collect();
-            assert_eq!(imm_operands.len(), inst.format.imm_fields.len());
+            assert_eq!(imm_operands.len(), inst.format.imm_fields.len(),);
             for op in imm_operands {
                 write!(&mut s, " {}", op.name).unwrap();
+            }
+
+            // Blocks.
+            let block_operands: Vec<_> = inst
+                .operands_in
+                .iter()
+                .filter(|o| o.kind.is_block())
+                .collect();
+            assert_eq!(block_operands.len(), inst.format.num_block_operands);
+            assert!(block_operands.len() <= 2);
+
+            if !block_operands.is_empty() {
+                if block_operands.len() == 1 {
+                    write!(&mut s, " {}", block_operands[0].name).unwrap();
+                } else {
+                    let blocks: Vec<_> = block_operands.iter().map(|o| o.name).collect();
+                    let blocks = blocks.join(" ");
+                    write!(
+                        &mut s,
+                        " (block_array_{} {})",
+                        inst.format.num_block_operands, blocks,
+                    )
+                    .unwrap();
+                }
             }
 
             s.push_str("))");
@@ -1421,11 +1613,31 @@ fn gen_common_isle(
                     .unwrap();
                 }
 
+                if inst.format.num_block_operands > 0 {
+                    let blocks: Vec<_> = inst
+                        .operands_in
+                        .iter()
+                        .filter(|o| o.kind.is_block())
+                        .map(|o| o.name)
+                        .collect();
+                    if inst.format.num_block_operands == 1 {
+                        write!(&mut s, " {}", blocks.first().unwrap(),).unwrap();
+                    } else {
+                        write!(
+                            &mut s,
+                            " (block_array_{} {})",
+                            inst.format.num_block_operands,
+                            blocks.join(" ")
+                        )
+                        .unwrap();
+                    }
+                }
+
                 // Immediates (non-value args).
                 for o in inst
                     .operands_in
                     .iter()
-                    .filter(|o| !o.is_value() && !o.is_varargs())
+                    .filter(|o| !o.is_value() && !o.is_varargs() && !o.kind.is_block())
                 {
                     write!(&mut s, " {}", o.name).unwrap();
                 }

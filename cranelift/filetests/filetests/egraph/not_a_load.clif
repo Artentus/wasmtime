@@ -1,4 +1,5 @@
 test compile precise-output
+set opt_level=speed
 set use_egraphs=true
 target x86_64
 
@@ -12,6 +13,7 @@ function u0:1302(i64) -> i64 system_v {
     return v0
 }
 
+; VCode:
 ;   pushq   %rbp
 ;   movq    %rsp, %rbp
 ; block0:
@@ -20,4 +22,19 @@ function u0:1302(i64) -> i64 system_v {
 ;   movq    %rbp, %rsp
 ;   popq    %rbp
 ;   ret
+; 
+; Disassembled:
+; block0: ; offset 0x0
+;   pushq %rbp
+;   movq %rsp, %rbp
+; block1: ; offset 0x4
+;   movq (%rdi), %rax ; trap: heap_oob
+;   movq %rax, %rcx
+;   addq %rdi, %rcx
+;   lock cmpxchgq %rcx, (%rdi) ; trap: heap_oob
+;   jne 7
+;   movq %rdi, %rax
+;   movq %rbp, %rsp
+;   popq %rbp
+;   retq
 

@@ -33,7 +33,7 @@ pub use crate::ir::builder::{
     InsertBuilder, InstBuilder, InstBuilderBase, InstInserterBase, ReplaceBuilder,
 };
 pub use crate::ir::constant::{ConstantData, ConstantPool};
-pub use crate::ir::dfg::{DataFlowGraph, ValueDef};
+pub use crate::ir::dfg::{BlockData, DataFlowGraph, ValueDef};
 pub use crate::ir::dynamic_type::{dynamic_to_fixed, DynamicTypeData, DynamicTypes};
 pub use crate::ir::entities::{
     Block, Constant, DynamicStackSlot, DynamicType, FuncRef, GlobalValue, Immediate, Inst,
@@ -46,7 +46,7 @@ pub use crate::ir::extname::{ExternalName, UserExternalName, UserFuncName};
 pub use crate::ir::function::{DisplayFunctionAnnotations, Function};
 pub use crate::ir::globalvalue::GlobalValueData;
 pub use crate::ir::instructions::{
-    InstructionData, Opcode, ValueList, ValueListPool, VariableArgs,
+    BlockCall, InstructionData, Opcode, ValueList, ValueListPool, VariableArgs,
 };
 pub use crate::ir::jumptable::JumpTableData;
 pub use crate::ir::known_symbol::KnownSymbol;

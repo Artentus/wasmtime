@@ -7,8 +7,8 @@ use crate::value::{Value, ValueConversionKind, ValueError, ValueResult};
 use cranelift_codegen::data_value::DataValue;
 use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
 use cranelift_codegen::ir::{
-    types, AbiParam, Block, ExternalName, FuncRef, Function, InstructionData, Opcode, TrapCode,
-    Type, Value as ValueRef,
+    types, AbiParam, Block, BlockCall, ExternalName, FuncRef, Function, InstructionData, Opcode,
+    TrapCode, Type, Value as ValueRef,
 };
 use log::trace;
 use smallvec::{smallvec, SmallVec};
@@ -32,6 +32,15 @@ fn validate_signature_params(sig: &[AbiParam], args: &[impl Value]) -> bool {
             (a, b) if a.is_vector() && b.is_vector() => true,
             (a, b) => a == b,
         })
+}
+
+// Helper for summing a sequence of values.
+fn sum<V: Value>(head: V, tail: SmallVec<[V; 1]>) -> ValueResult<i128> {
+    let mut acc = head;
+    for t in tail {
+        acc = Value::add(acc, t)?;
+    }
+    acc.into_int()
 }
 
 /// Interpret a single Cranelift instruction. Note that program traps and interpreter errors are
@@ -235,21 +244,24 @@ where
     };
 
     // Retrieve an instruction's branch destination; expects the instruction to be a branch.
-    let branch = || -> Block { inst.branch_destination().unwrap() };
+
+    let continue_at = |block: BlockCall| {
+        let branch_args = state
+            .collect_values(block.args_slice(&state.get_current_function().dfg.value_lists))
+            .map_err(|v| StepError::UnknownValue(v))?;
+        Ok(ControlFlow::ContinueAt(
+            block.block(&state.get_current_function().dfg.value_lists),
+            branch_args,
+        ))
+    };
 
     // Based on `condition`, indicate where to continue the control flow.
-    let branch_when = |condition: bool| -> Result<ControlFlow<V>, StepError> {
-        let branch_args = match inst {
-            InstructionData::Jump { .. } => args_range(0..),
-            InstructionData::Branch { .. } => args_range(1..),
-            _ => panic!("Unrecognized branch inst: {:?}", inst),
-        }?;
-
-        Ok(if condition {
-            ControlFlow::ContinueAt(branch(), branch_args)
+    let branch_when = |condition: bool, block| -> Result<ControlFlow<V>, StepError> {
+        if condition {
+            continue_at(block)
         } else {
-            ControlFlow::Continue
-        })
+            Ok(ControlFlow::Continue)
+        }
     };
 
     // Retrieve an instruction's trap code; expects the instruction to be a trap.
@@ -264,43 +276,117 @@ where
         }
     };
 
-    // Helper for summing a sequence of values.
-    fn sum<V: Value>(head: V, tail: SmallVec<[V; 1]>) -> ValueResult<i128> {
-        let mut acc = head;
-        for t in tail {
-            acc = Value::add(acc, t)?;
+    // Perform a call operation.
+    //
+    // The returned `ControlFlow` variant is determined by the given function
+    // argument, which should make either a `ControlFlow::Call` or a
+    // `ControlFlow::ReturnCall`.
+    let do_call = |make_ctrl_flow: fn(&'a Function, SmallVec<[V; 1]>) -> ControlFlow<'a, V>|
+     -> Result<ControlFlow<'a, V>, StepError> {
+        let func_ref = if let InstructionData::Call { func_ref, .. } = inst {
+            func_ref
+        } else {
+            unreachable!()
+        };
+
+        let curr_func = state.get_current_function();
+        let ext_data = curr_func
+            .dfg
+            .ext_funcs
+            .get(func_ref)
+            .ok_or(StepError::UnknownFunction(func_ref))?;
+
+        let signature = if let Some(sig) = curr_func.dfg.signatures.get(ext_data.signature) {
+            sig
+        } else {
+            return Ok(ControlFlow::Trap(CraneliftTrap::User(
+                TrapCode::BadSignature,
+            )));
+        };
+
+        let args = args()?;
+
+        // Check the types of the arguments. This is usually done by the verifier, but nothing
+        // guarantees that the user has ran that.
+        let args_match = validate_signature_params(&signature.params[..], &args[..]);
+        if !args_match {
+            return Ok(ControlFlow::Trap(CraneliftTrap::User(
+                TrapCode::BadSignature,
+            )));
         }
-        acc.into_int()
-    }
+
+        Ok(match ext_data.name {
+            // These functions should be registered in the regular function store
+            ExternalName::User(_) | ExternalName::TestCase(_) => {
+                let function = state
+                    .get_function(func_ref)
+                    .ok_or(StepError::UnknownFunction(func_ref))?;
+
+                make_ctrl_flow(function, args)
+            }
+            ExternalName::LibCall(libcall) => {
+                debug_assert_ne!(inst.opcode(), Opcode::ReturnCall, "Cannot tail call to libcalls");
+                let libcall_handler = state.get_libcall_handler();
+
+                // We don't transfer control to a libcall, we just execute it and return the results
+                let res = libcall_handler(libcall, args);
+                let res = match res {
+                    Err(trap) => return Ok(ControlFlow::Trap(CraneliftTrap::User(trap))),
+                    Ok(rets) => rets,
+                };
+
+                // Check that what the handler returned is what we expect.
+                if validate_signature_params(&signature.returns[..], &res[..]) {
+                    ControlFlow::Assign(res)
+                } else {
+                    ControlFlow::Trap(CraneliftTrap::User(TrapCode::BadSignature))
+                }
+            }
+            ExternalName::KnownSymbol(_) => unimplemented!(),
+        })
+    };
 
     // Interpret a Cranelift instruction.
     Ok(match inst.opcode() {
-        Opcode::Jump => ControlFlow::ContinueAt(branch(), args()?),
-        Opcode::Brz => branch_when(
-            !arg(0)?
-                .convert(ValueConversionKind::ToBoolean)?
-                .into_bool()?,
-        )?,
-        Opcode::Brnz => branch_when(
-            arg(0)?
-                .convert(ValueConversionKind::ToBoolean)?
-                .into_bool()?,
-        )?,
-        Opcode::BrTable => {
-            if let InstructionData::BranchTable {
-                table, destination, ..
+        Opcode::Jump => {
+            if let InstructionData::Jump { destination, .. } = inst {
+                continue_at(destination)?
+            } else {
+                unreachable!()
+            }
+        }
+        Opcode::Brif => {
+            if let InstructionData::Brif {
+                arg,
+                blocks: [block_then, block_else],
+                ..
             } = inst
             {
-                let jt_data = &state.get_current_function().jump_tables[table];
+                let arg = state.get_value(arg).ok_or(StepError::UnknownValue(arg))?;
+
+                let condition = arg.convert(ValueConversionKind::ToBoolean)?.into_bool()?;
+
+                if condition {
+                    continue_at(block_then)?
+                } else {
+                    continue_at(block_else)?
+                }
+            } else {
+                unreachable!()
+            }
+        }
+        Opcode::BrTable => {
+            if let InstructionData::BranchTable { table, .. } = inst {
+                let jt_data = &state.get_current_function().stencil.dfg.jump_tables[table];
 
                 // Convert to usize to remove negative indexes from the following operations
                 let jump_target = usize::try_from(arg(0)?.into_int()?)
                     .ok()
                     .and_then(|i| jt_data.as_slice().get(i))
                     .copied()
-                    .unwrap_or(destination);
+                    .unwrap_or(jt_data.default_block());
 
-                ControlFlow::ContinueAt(jump_target, SmallVec::new())
+                continue_at(jump_target)?
             } else {
                 unreachable!()
             }
@@ -312,69 +398,10 @@ where
         Opcode::Trapnz => trap_when(arg(0)?.into_bool()?, CraneliftTrap::User(trap_code())),
         Opcode::ResumableTrapnz => trap_when(arg(0)?.into_bool()?, CraneliftTrap::Resumable),
         Opcode::Return => ControlFlow::Return(args()?),
-        Opcode::Call => {
-            let func_ref = if let InstructionData::Call { func_ref, .. } = inst {
-                func_ref
-            } else {
-                unreachable!()
-            };
-
-            let curr_func = state.get_current_function();
-            let ext_data = curr_func
-                .dfg
-                .ext_funcs
-                .get(func_ref)
-                .ok_or(StepError::UnknownFunction(func_ref))?;
-
-            let signature = if let Some(sig) = curr_func.dfg.signatures.get(ext_data.signature) {
-                sig
-            } else {
-                return Ok(ControlFlow::Trap(CraneliftTrap::User(
-                    TrapCode::BadSignature,
-                )));
-            };
-
-            let args = args()?;
-
-            // Check the types of the arguments. This is usually done by the verifier, but nothing
-            // guarantees that the user has ran that.
-            let args_match = validate_signature_params(&signature.params[..], &args[..]);
-            if !args_match {
-                return Ok(ControlFlow::Trap(CraneliftTrap::User(
-                    TrapCode::BadSignature,
-                )));
-            }
-
-            match ext_data.name {
-                // These functions should be registered in the regular function store
-                ExternalName::User(_) | ExternalName::TestCase(_) => {
-                    let function = state
-                        .get_function(func_ref)
-                        .ok_or(StepError::UnknownFunction(func_ref))?;
-
-                    ControlFlow::Call(function, args)
-                }
-                ExternalName::LibCall(libcall) => {
-                    let libcall_handler = state.get_libcall_handler();
-
-                    // We don't transfer control to a libcall, we just execute it and return the results
-                    let res = libcall_handler(libcall, args);
-                    let res = match res {
-                        Err(trap) => return Ok(ControlFlow::Trap(CraneliftTrap::User(trap))),
-                        Ok(rets) => rets,
-                    };
-
-                    // Check that what the handler returned is what we expect.
-                    if validate_signature_params(&signature.returns[..], &res[..]) {
-                        ControlFlow::Assign(res)
-                    } else {
-                        ControlFlow::Trap(CraneliftTrap::User(TrapCode::BadSignature))
-                    }
-                }
-                ExternalName::KnownSymbol(_) => unimplemented!(),
-            }
-        }
+        Opcode::Call => do_call(ControlFlow::Call)?,
         Opcode::CallIndirect => unimplemented!("CallIndirect"),
+        Opcode::ReturnCall => do_call(ControlFlow::ReturnCall)?,
+        Opcode::ReturnCallIndirect => unimplemented!("ReturnCallIndirect"),
         Opcode::FuncAddr => unimplemented!("FuncAddr"),
         Opcode::Load
         | Opcode::Uload8
@@ -1162,9 +1189,27 @@ where
         Opcode::Iconcat => assign(Value::concat(arg(0)?, arg(1)?)?),
         Opcode::AtomicRmw => unimplemented!("AtomicRmw"),
         Opcode::AtomicCas => unimplemented!("AtomicCas"),
-        Opcode::AtomicLoad => unimplemented!("AtomicLoad"),
-        Opcode::AtomicStore => unimplemented!("AtomicStore"),
-        Opcode::Fence => unimplemented!("Fence"),
+        Opcode::AtomicLoad => {
+            let load_ty = inst_context.controlling_type().unwrap();
+            let addr = arg(0)?.into_int()? as u64;
+            // We are doing a regular load here, this isn't actually thread safe.
+            assign_or_memtrap(
+                Address::try_from(addr).and_then(|addr| state.checked_load(addr, load_ty)),
+            )
+        }
+        Opcode::AtomicStore => {
+            let val = arg(0)?;
+            let addr = arg(1)?.into_int()? as u64;
+            // We are doing a regular store here, this isn't actually thread safe.
+            continue_or_memtrap(
+                Address::try_from(addr).and_then(|addr| state.checked_store(addr, val)),
+            )
+        }
+        Opcode::Fence => {
+            // The interpreter always runs in a single threaded context, so we don't
+            // actually need to emit a fence here.
+            ControlFlow::Continue
+        }
         Opcode::WideningPairwiseDotProductS => {
             let ctrl_ty = types::I16X8;
             let new_type = ctrl_ty.merge_lanes().unwrap();
@@ -1245,12 +1290,15 @@ pub enum ControlFlow<'a, V> {
     /// Continue to the next available instruction, e.g.: in `nop`, we expect to resume execution
     /// at the instruction after it.
     Continue,
-    /// Jump to another block with the given parameters, e.g.: in `brz v0, block42, [v1, v2]`, if
-    /// the condition is true, we continue execution at the first instruction of `block42` with the
-    /// values in `v1` and `v2` filling in the block parameters.
+    /// Jump to another block with the given parameters, e.g.: in
+    /// `brif v0, block42(v1, v2), block97`, if the condition is true, we continue execution at the
+    /// first instruction of `block42` with the values in `v1` and `v2` filling in the block
+    /// parameters.
     ContinueAt(Block, SmallVec<[V; 1]>),
     /// Indicates a call the given [Function] with the supplied arguments.
     Call(&'a Function, SmallVec<[V; 1]>),
+    /// Indicates a tail call to the given [Function] with the supplied arguments.
+    ReturnCall(&'a Function, SmallVec<[V; 1]>),
     /// Return from the current function with the given parameters, e.g.: `return [v1, v2]`.
     Return(SmallVec<[V; 1]>),
     /// Stop with a program-generated trap; note that these are distinct from errors that may occur

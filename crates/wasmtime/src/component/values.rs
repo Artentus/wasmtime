@@ -11,6 +11,7 @@ use std::ops::Deref;
 use wasmtime_component_util::{DiscriminantSize, FlagsSize};
 use wasmtime_environ::component::VariantInfo;
 
+/// Represents runtime list values
 #[derive(PartialEq, Eq, Clone)]
 pub struct List {
     ty: types::List,
@@ -57,6 +58,7 @@ impl fmt::Debug for List {
     }
 }
 
+/// Represents runtime record values
 #[derive(PartialEq, Eq, Clone)]
 pub struct Record {
     ty: types::Record,
@@ -127,6 +129,7 @@ impl fmt::Debug for Record {
     }
 }
 
+/// Represents runtime tuple values
 #[derive(PartialEq, Eq, Clone)]
 pub struct Tuple {
     ty: types::Tuple,
@@ -176,6 +179,7 @@ impl fmt::Debug for Tuple {
     }
 }
 
+/// Represents runtime variant values
 #[derive(PartialEq, Eq, Clone)]
 pub struct Variant {
     ty: types::Variant,
@@ -246,6 +250,7 @@ impl fmt::Debug for Variant {
     }
 }
 
+/// Represents runtime enum values
 #[derive(PartialEq, Eq, Clone)]
 pub struct Enum {
     ty: types::Enum,
@@ -284,6 +289,7 @@ impl fmt::Debug for Enum {
     }
 }
 
+/// Represents runtime union values
 #[derive(PartialEq, Eq, Clone)]
 pub struct Union {
     ty: types::Union,
@@ -336,6 +342,7 @@ impl fmt::Debug for Union {
     }
 }
 
+/// Represents runtime option values
 #[derive(PartialEq, Eq, Clone)]
 pub struct OptionVal {
     ty: types::OptionType,
@@ -378,6 +385,7 @@ impl fmt::Debug for OptionVal {
     }
 }
 
+/// Represents runtime result values
 #[derive(PartialEq, Eq, Clone)]
 pub struct ResultVal {
     ty: types::ResultType,
@@ -425,6 +433,7 @@ impl fmt::Debug for ResultVal {
     }
 }
 
+/// Represents runtime flag values
 #[derive(PartialEq, Eq, Clone)]
 pub struct Flags {
     ty: types::Flags,
@@ -1007,10 +1016,22 @@ impl Val {
 impl PartialEq for Val {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            // This breaks conformance with IEEE-754 equality to simplify testing logic.
-            (Self::Float32(l), Self::Float32(r)) => l == r || (l.is_nan() && r.is_nan()),
+            // IEEE 754 equality considers NaN inequal to NaN and negative zero
+            // equal to positive zero, however we do the opposite here, because
+            // this logic is used by testing and fuzzing, which want to know
+            // whether two values are semantically the same, rather than
+            // numerically equal.
+            (Self::Float32(l), Self::Float32(r)) => {
+                (*l != 0.0 && l == r)
+                    || (*l == 0.0 && l.to_bits() == r.to_bits())
+                    || (l.is_nan() && r.is_nan())
+            }
             (Self::Float32(_), _) => false,
-            (Self::Float64(l), Self::Float64(r)) => l == r || (l.is_nan() && r.is_nan()),
+            (Self::Float64(l), Self::Float64(r)) => {
+                (*l != 0.0 && l == r)
+                    || (*l == 0.0 && l.to_bits() == r.to_bits())
+                    || (l.is_nan() && r.is_nan())
+            }
             (Self::Float64(_), _) => false,
 
             (Self::Bool(l), Self::Bool(r)) => l == r,

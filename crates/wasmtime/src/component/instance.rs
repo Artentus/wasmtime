@@ -1,6 +1,7 @@
 use crate::component::func::HostFunc;
 use crate::component::{Component, ComponentNamedList, Func, Lift, Lower, TypedFunc};
 use crate::instance::OwnedImports;
+use crate::linker::DefinitionType;
 use crate::store::{StoreOpaque, Stored};
 use crate::{AsContextMut, Module, StoreContextMut};
 use anyhow::{anyhow, Context, Result};
@@ -84,20 +85,19 @@ impl Instance {
     /// # Panics
     ///
     /// Panics if `store` does not own this instance.
-    pub fn get_typed_func<Params, Results, S>(
+    pub fn get_typed_func<Params, Results>(
         &self,
-        mut store: S,
+        mut store: impl AsContextMut,
         name: &str,
     ) -> Result<TypedFunc<Params, Results>>
     where
         Params: ComponentNamedList + Lower,
         Results: ComponentNamedList + Lift,
-        S: AsContextMut,
     {
         let f = self
             .get_func(store.as_context_mut(), name)
             .ok_or_else(|| anyhow!("failed to find function export `{}`", name))?;
-        Ok(f.typed::<Params, Results, _>(store)
+        Ok(f.typed::<Params, Results>(store)
             .with_context(|| format!("failed to convert function `{}` to given type", name))?)
     }
 
@@ -439,13 +439,13 @@ impl<'a> Instantiator<'a> {
         }
 
         let val = unsafe { crate::Extern::from_wasmtime_export(export, store) };
+        let ty = DefinitionType::from(store, &val);
         crate::types::matching::MatchCx {
-            store,
             engine: store.engine(),
             signatures: module.signatures(),
             types: module.types(),
         }
-        .extern_(&expected, &val)
+        .definition(&expected, &ty)
         .expect("unexpected typecheck failure");
     }
 }

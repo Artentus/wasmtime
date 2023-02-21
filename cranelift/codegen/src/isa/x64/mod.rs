@@ -23,7 +23,7 @@ mod abi;
 pub mod encoding;
 mod inst;
 mod lower;
-mod settings;
+pub mod settings;
 
 /// An X64 backend.
 pub(crate) struct X64Backend {
@@ -84,7 +84,7 @@ impl TargetIsa for X64Backend {
         Ok(CompiledCodeStencil {
             buffer,
             frame_size,
-            disasm: emit_result.disasm,
+            vcode: emit_result.disasm,
             value_labels_ranges,
             sized_stackslot_offsets,
             dynamic_stackslot_offsets,
@@ -170,6 +170,16 @@ impl TargetIsa for X64Backend {
     /// always from aligned memory.
     fn function_alignment(&self) -> u32 {
         16
+    }
+
+    #[cfg(feature = "disas")]
+    fn to_capstone(&self) -> Result<capstone::Capstone, capstone::Error> {
+        use capstone::prelude::*;
+        Capstone::new()
+            .x86()
+            .mode(arch::x86::ArchMode::Mode64)
+            .syntax(arch::x86::ArchSyntax::Att)
+            .build()
     }
 }
 
@@ -261,23 +271,20 @@ mod test {
         let v0 = pos.ins().iconst(I32, 0x1234);
         pos.set_srcloc(SourceLoc::new(2));
         let v1 = pos.ins().iadd(arg0, v0);
-        pos.ins().brnz(v1, bb1, &[v1]);
-        pos.ins().jump(bb2, &[]);
+        pos.ins().brif(v1, bb1, &[v1], bb2, &[]);
 
         pos.insert_block(bb1);
         pos.set_srcloc(SourceLoc::new(3));
         let v2 = pos.ins().isub(v1, v0);
         pos.set_srcloc(SourceLoc::new(4));
         let v3 = pos.ins().iadd(v2, bb1_param);
-        pos.ins().brnz(v1, bb2, &[]);
-        pos.ins().jump(bb3, &[v3]);
+        pos.ins().brif(v1, bb2, &[], bb3, &[v3]);
 
         pos.func.layout.set_cold(bb2);
         pos.insert_block(bb2);
         pos.set_srcloc(SourceLoc::new(5));
         let v4 = pos.ins().iadd(v1, v0);
-        pos.ins().brnz(v4, bb2, &[]);
-        pos.ins().jump(bb1, &[v4]);
+        pos.ins().brif(v4, bb2, &[], bb1, &[v4]);
 
         pos.insert_block(bb3);
         pos.set_srcloc(SourceLoc::new(6));
@@ -411,11 +418,15 @@ mod test {
         let mut pos = FuncCursor::new(&mut func);
 
         pos.insert_block(bb0);
-        let mut jt_data = JumpTableData::new();
-        jt_data.push_entry(bb1);
-        jt_data.push_entry(bb2);
+        let jt_data = JumpTableData::new(
+            pos.func.dfg.block_call(bb3, &[]),
+            &[
+                pos.func.dfg.block_call(bb1, &[]),
+                pos.func.dfg.block_call(bb2, &[]),
+            ],
+        );
         let jt = pos.func.create_jump_table(jt_data);
-        pos.ins().br_table(arg0, bb3, jt);
+        pos.ins().br_table(arg0, jt);
 
         pos.insert_block(bb1);
         let v1 = pos.ins().iconst(I32, 1);

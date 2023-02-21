@@ -64,7 +64,7 @@ use target_lexicon::{triple, Architecture, PointerWidth, Triple};
 pub mod x64;
 
 #[cfg(feature = "arm64")]
-pub(crate) mod aarch64;
+pub mod aarch64;
 
 #[cfg(feature = "riscv64")]
 pub mod riscv64;
@@ -310,6 +310,12 @@ pub trait TargetIsa: fmt::Display + Send + Sync {
         Self: Sized + 'static,
     {
         Arc::new(self)
+    }
+
+    /// Generate a `Capstone` context for disassembling bytecode for this architecture.
+    #[cfg(feature = "disas")]
+    fn to_capstone(&self) -> Result<capstone::Capstone, capstone::Error> {
+        Err(capstone::Error::UnsupportedArch)
     }
 }
 

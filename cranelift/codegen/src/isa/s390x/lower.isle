@@ -238,19 +238,34 @@
 
 ;;;; Rules for `umax` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Unsigned maximum of two scalar integers - expand to icmp + select.
+(rule 1 (lower (has_type (ty_int ty) (umax x y)))
+      (let ((cond ProducesBool (icmp_val $false (IntCC.UnsignedLessThan) x y)))
+        (select_bool_reg ty cond y x)))
+
 ;; Unsigned maximum of two vector registers.
-(rule (lower (has_type (ty_vec128 ty) (umax x y)))
+(rule 0 (lower (has_type (ty_vec128 ty) (umax x y)))
       (vec_umax ty x y))
 
 
 ;;;; Rules for `umin` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; Unsigned minimum of two scalar integers - expand to icmp + select.
+(rule 1 (lower (has_type (ty_int ty) (umin x y)))
+      (let ((cond ProducesBool (icmp_val $false (IntCC.UnsignedGreaterThan) x y)))
+        (select_bool_reg ty cond y x)))
+
 ;; Unsigned minimum of two vector registers.
-(rule (lower (has_type (ty_vec128 ty) (umin x y)))
+(rule 0 (lower (has_type (ty_vec128 ty) (umin x y)))
       (vec_umin ty x y))
 
 
 ;;;; Rules for `smax` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Signed maximum of two scalar integers - expand to icmp + select.
+(rule 1 (lower (has_type (ty_int ty) (smax x y)))
+      (let ((cond ProducesBool (icmp_val $false (IntCC.SignedLessThan) x y)))
+        (select_bool_reg ty cond y x)))
 
 ;; Signed maximum of two vector registers.
 (rule (lower (has_type (ty_vec128 ty) (smax x y)))
@@ -258,6 +273,11 @@
 
 
 ;;;; Rules for `smin` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Signed minimum of two scalar integers - expand to icmp + select.
+(rule 1 (lower (has_type (ty_int ty) (smin x y)))
+      (let ((cond ProducesBool (icmp_val $false (IntCC.SignedGreaterThan) x y)))
+        (select_bool_reg ty cond y x)))
 
 ;; Signed minimum of two vector registers.
 (rule (lower (has_type (ty_vec128 ty) (smin x y)))
@@ -956,6 +976,15 @@
 (rule (lower (has_type (vr128_ty ty) (bnot x)))
       (vec_not ty x))
 
+;; With z15 (bnot (bxor ...)) can be a single instruction, similar to the
+;; (bxor _ (bnot _)) lowering.
+(rule 3 (lower (has_type (and (mie2_enabled) (fits_in_64 ty)) (bnot (bxor x y))))
+      (not_xor_reg ty x y))
+
+;; Combine a not/xor operation of vector types into one.
+(rule 4 (lower (has_type (vr128_ty ty) (bnot (bxor x y))))
+      (vec_not_xor ty x y))
+
 
 ;;;; Rules for `band` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -983,6 +1012,22 @@
 (rule 0 (lower (has_type (vr128_ty ty) (band x y)))
       (vec_and ty x y))
 
+;; Specialized lowerings for `(band x (bnot y))` which is additionally produced
+;; by Cranelift's `band_not` instruction that is legalized into the simpler
+;; forms early on.
+
+;; z15 version using a single instruction.
+(rule 7 (lower (has_type (and (mie2_enabled) (fits_in_64 ty)) (band x (bnot y))))
+      (and_not_reg ty x y))
+(rule 8 (lower (has_type (and (mie2_enabled) (fits_in_64 ty)) (band (bnot y) x)))
+      (and_not_reg ty x y))
+
+;; And-not two vector registers.
+(rule 9 (lower (has_type (vr128_ty ty) (band x (bnot y))))
+      (vec_and_not ty x y))
+(rule 10 (lower (has_type (vr128_ty ty) (band (bnot y) x)))
+      (vec_and_not ty x y))
+
 ;;;; Rules for `bor` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Or two registers.
@@ -1009,6 +1054,22 @@
 (rule 0 (lower (has_type (vr128_ty ty) (bor x y)))
       (vec_or ty x y))
 
+;; Specialized lowerings for `(bor x (bnot y))` which is additionally produced
+;; by Cranelift's `bor_not` instruction that is legalized into the simpler
+;; forms early on.
+
+;; z15 version using a single instruction.
+(rule 7 (lower (has_type (and (mie2_enabled) (fits_in_64 ty)) (bor x (bnot y))))
+      (or_not_reg ty x y))
+(rule 8 (lower (has_type (and (mie2_enabled) (fits_in_64 ty)) (bor (bnot y) x)))
+      (or_not_reg ty x y))
+
+;; Or-not two vector registers.
+(rule 9 (lower (has_type (vr128_ty ty) (bor x (bnot y))))
+      (vec_or_not ty x y))
+(rule 10 (lower (has_type (vr128_ty ty) (bor (bnot y) x)))
+      (vec_or_not ty x y))
+
 
 ;;;; Rules for `bxor` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -1032,49 +1093,20 @@
 (rule 0 (lower (has_type (vr128_ty ty) (bxor x y)))
       (vec_xor ty x y))
 
-
-;;;; Rules for `band_not` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; z15 version using a single instruction.
-(rule 2 (lower (has_type (and (mie2_enabled) (fits_in_64 ty)) (band_not x y)))
-      (and_not_reg ty x y))
-
-;; z14 version using XOR with -1.
-(rule 1 (lower (has_type (and (mie2_disabled) (fits_in_64 ty)) (band_not x y)))
-      (and_reg ty x (not_reg ty y)))
-
-;; And-not two vector registers.
-(rule (lower (has_type (vr128_ty ty) (band_not x y)))
-      (vec_and_not ty x y))
-
-
-;;;; Rules for `bor_not` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Specialized lowerings for `(bxor x (bnot y))` which is additionally produced
+;; by Cranelift's `bxor_not` instruction that is legalized into the simpler
+;; forms early on.
 
 ;; z15 version using a single instruction.
-(rule 2 (lower (has_type (and (mie2_enabled) (fits_in_64 ty)) (bor_not x y)))
-      (or_not_reg ty x y))
-
-;; z14 version using XOR with -1.
-(rule 1 (lower (has_type (and (mie2_disabled) (fits_in_64 ty)) (bor_not x y)))
-      (or_reg ty x (not_reg ty y)))
-
-;; Or-not two vector registers.
-(rule (lower (has_type (vr128_ty ty) (bor_not x y)))
-      (vec_or_not ty x y))
-
-
-;;;; Rules for `bxor_not` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; z15 version using a single instruction.
-(rule 2 (lower (has_type (and (mie2_enabled) (fits_in_64 ty)) (bxor_not x y)))
+(rule 5 (lower (has_type (and (mie2_enabled) (fits_in_64 ty)) (bxor x (bnot y))))
+      (not_xor_reg ty x y))
+(rule 6 (lower (has_type (and (mie2_enabled) (fits_in_64 ty)) (bxor (bnot y) x)))
       (not_xor_reg ty x y))
 
-;; z14 version using XOR with -1.
-(rule 1 (lower (has_type (and (mie2_disabled) (fits_in_64 ty)) (bxor_not x y)))
-      (not_reg ty (xor_reg ty x y)))
-
 ;; Xor-not two vector registers.
-(rule (lower (has_type (vr128_ty ty) (bxor_not x y)))
+(rule 7 (lower (has_type (vr128_ty ty) (bxor x (bnot y))))
+      (vec_not_xor ty x y))
+(rule 8 (lower (has_type (vr128_ty ty) (bxor (bnot y) x)))
       (vec_not_xor ty x y))
 
 
@@ -3714,7 +3746,7 @@
 
 ;; Unconditional branch.  The target is found as first (and only) element in
 ;; the list of the current block's branch targets passed as `targets`.
-(rule (lower_branch (jump _ _) targets)
+(rule (lower_branch (jump _) targets)
       (emit_side_effect (jump_impl (vec_element targets 0))))
 
 
@@ -3722,7 +3754,7 @@
 
 ;; Jump table.  `targets` contains the default target followed by the
 ;; list of branch targets per index value.
-(rule (lower_branch (br_table val_idx _ _) targets)
+(rule (lower_branch (br_table val_idx _) targets)
       (let ((idx Reg (put_in_reg_zext64 val_idx))
             ;; Bounds-check the index and branch to default.
             ;; This is an internal branch that is not a terminator insn.
@@ -3750,26 +3782,15 @@
         (emit_side_effect (jt_sequence (lshl_imm $I64 idx 2) targets))))
 
 
-;;;; Rules for `brz` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; Two-way conditional branch on zero.  `targets` contains:
-;; - element 0: target if the condition is true (i.e. value is zero)
-;; - element 1: target if the condition is false (i.e. value is nonzero)
-(rule (lower_branch (brz val_cond _ _) targets)
-      (emit_side_effect (cond_br_bool (invert_bool (value_nonzero val_cond))
-                                      (vec_element targets 0)
-                                      (vec_element targets 1))))
-
-
-;;;; Rules for `brnz` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; Rules for `brif` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Two-way conditional branch on nonzero.  `targets` contains:
 ;; - element 0: target if the condition is true (i.e. value is nonzero)
 ;; - element 1: target if the condition is false (i.e. value is zero)
-(rule (lower_branch (brnz val_cond _ _) targets)
+(rule (lower_branch (brif val_cond _ _) targets)
       (emit_side_effect (cond_br_bool (value_nonzero val_cond)
-                                     (vec_element targets 0)
-                                     (vec_element targets 1))))
+                                      (vec_element targets 0)
+                                      (vec_element targets 1))))
 
 
 ;;;; Rules for `trap` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

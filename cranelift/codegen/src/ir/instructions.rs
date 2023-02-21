@@ -20,7 +20,7 @@ use crate::ir::{
     self,
     condcodes::{FloatCC, IntCC},
     trapcode::TrapCode,
-    types, Block, FuncRef, JumpTable, MemFlags, SigRef, StackSlot, Type, Value,
+    types, Block, FuncRef, MemFlags, SigRef, StackSlot, Type, Value,
 };
 
 /// Some instructions use an external list of argument values because there is not enough space in
@@ -30,6 +30,133 @@ pub type ValueList = entity::EntityList<Value>;
 
 /// Memory pool for holding value lists. See `ValueList`.
 pub type ValueListPool = entity::ListPool<Value>;
+
+/// A pair of a Block and its arguments, stored in a single EntityList internally.
+///
+/// NOTE: We don't expose either value_to_block or block_to_value outside of this module because
+/// this operation is not generally safe. However, as the two share the same underlying layout,
+/// they can be stored in the same value pool.
+///
+/// BlockCall makes use of this shared layout by storing all of its contents (a block and its
+/// argument) in a single EntityList. This is a bit better than introducing a new entity type for
+/// the pair of a block name and the arguments entity list, as we don't pay any indirection penalty
+/// to get to the argument values -- they're stored in-line with the block in the same list.
+///
+/// The BlockCall::new function guarantees this layout by requiring a block argument that's written
+/// in as the first element of the EntityList. Any subsequent entries are always assumed to be real
+/// Values.
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
+pub struct BlockCall {
+    /// The underlying storage for the BlockCall. The first element of the values EntityList is
+    /// guaranteed to always be a Block encoded as a Value via BlockCall::block_to_value.
+    /// Consequently, the values entity list is never empty.
+    values: entity::EntityList<Value>,
+}
+
+impl BlockCall {
+    // NOTE: the only uses of this function should be internal to BlockCall. See the block comment
+    // on BlockCall for more context.
+    fn value_to_block(val: Value) -> Block {
+        Block::from_u32(val.as_u32())
+    }
+
+    // NOTE: the only uses of this function should be internal to BlockCall. See the block comment
+    // on BlockCall for more context.
+    fn block_to_value(block: Block) -> Value {
+        Value::from_u32(block.as_u32())
+    }
+
+    /// Construct a BlockCall with the given block and arguments.
+    pub fn new(block: Block, args: &[Value], pool: &mut ValueListPool) -> Self {
+        let mut values = ValueList::default();
+        values.push(Self::block_to_value(block), pool);
+        values.extend(args.iter().copied(), pool);
+        Self { values }
+    }
+
+    /// Return the block for this BlockCall.
+    pub fn block(&self, pool: &ValueListPool) -> Block {
+        let val = self.values.first(pool).unwrap();
+        Self::value_to_block(val)
+    }
+
+    /// Replace the block for this BlockCall.
+    pub fn set_block(&mut self, block: Block, pool: &mut ValueListPool) {
+        *self.values.get_mut(0, pool).unwrap() = Self::block_to_value(block);
+    }
+
+    /// Append an argument to the block args.
+    pub fn append_argument(&mut self, arg: Value, pool: &mut ValueListPool) {
+        self.values.push(arg, pool);
+    }
+
+    /// Return a slice for the arguments of this block.
+    pub fn args_slice<'a>(&self, pool: &'a ValueListPool) -> &'a [Value] {
+        &self.values.as_slice(pool)[1..]
+    }
+
+    /// Return a slice for the arguments of this block.
+    pub fn args_slice_mut<'a>(&'a mut self, pool: &'a mut ValueListPool) -> &'a mut [Value] {
+        &mut self.values.as_mut_slice(pool)[1..]
+    }
+
+    /// Remove the argument at ix from the argument list.
+    pub fn remove(&mut self, ix: usize, pool: &mut ValueListPool) {
+        self.values.remove(1 + ix, pool)
+    }
+
+    /// Clear out the arguments list.
+    pub fn clear(&mut self, pool: &mut ValueListPool) {
+        self.values.truncate(1, pool)
+    }
+
+    /// Appends multiple elements to the arguments.
+    pub fn extend<I>(&mut self, elements: I, pool: &mut ValueListPool)
+    where
+        I: IntoIterator<Item = Value>,
+    {
+        self.values.extend(elements, pool)
+    }
+
+    /// Return a value that can display this block call.
+    pub fn display<'a>(&self, pool: &'a ValueListPool) -> DisplayBlockCall<'a> {
+        DisplayBlockCall { block: *self, pool }
+    }
+
+    /// Deep-clone the underlying list in the same pool. The returned
+    /// list will have identical contents but changes to this list
+    /// will not change its contents or vice-versa.
+    pub fn deep_clone(&self, pool: &mut ValueListPool) -> Self {
+        Self {
+            values: self.values.deep_clone(pool),
+        }
+    }
+}
+
+/// Wrapper for the context needed to display a [BlockCall] value.
+pub struct DisplayBlockCall<'a> {
+    block: BlockCall,
+    pool: &'a ValueListPool,
+}
+
+impl<'a> Display for DisplayBlockCall<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.block.block(&self.pool))?;
+        let args = self.block.args_slice(&self.pool);
+        if !args.is_empty() {
+            write!(f, "(")?;
+            for (ix, arg) in args.iter().enumerate() {
+                if ix > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", arg)?;
+            }
+            write!(f, ")")?;
+        }
+        Ok(())
+    }
+}
 
 // Include code generated by `cranelift-codegen/meta/src/gen_inst.rs`. This file contains:
 //
@@ -174,65 +301,42 @@ impl Default for VariableArgs {
 /// Avoid large matches on instruction formats by using the methods defined here to examine
 /// instructions.
 impl InstructionData {
-    /// Return information about the destination of a branch or jump instruction.
+    /// Get the destinations of this instruction, if it's a branch.
     ///
-    /// Any instruction that can transfer control to another block reveals its possible destinations
-    /// here.
-    pub fn analyze_branch<'a>(&'a self, pool: &'a ValueListPool) -> BranchInfo<'a> {
-        match *self {
+    /// `br_table` returns the empty slice.
+    pub fn branch_destination<'a>(&'a self, jump_tables: &'a ir::JumpTables) -> &[BlockCall] {
+        match self {
             Self::Jump {
-                destination,
-                ref args,
-                ..
-            } => BranchInfo::SingleDest(destination, args.as_slice(pool)),
-            Self::Branch {
-                destination,
-                ref args,
-                ..
-            } => BranchInfo::SingleDest(destination, &args.as_slice(pool)[1..]),
-            Self::BranchTable {
-                table, destination, ..
-            } => BranchInfo::Table(table, Some(destination)),
+                ref destination, ..
+            } => std::slice::from_ref(destination),
+            Self::Brif { blocks, .. } => blocks.as_slice(),
+            Self::BranchTable { table, .. } => jump_tables.get(*table).unwrap().all_branches(),
             _ => {
                 debug_assert!(!self.opcode().is_branch());
-                BranchInfo::NotABranch
+                &[]
             }
         }
     }
 
-    /// Get the single destination of this branch instruction, if it is a single destination
-    /// branch or jump.
+    /// Get a mutable slice of the destinations of this instruction, if it's a branch.
     ///
-    /// Multi-destination branches like `br_table` return `None`.
-    pub fn branch_destination(&self) -> Option<Block> {
-        match *self {
-            Self::Jump { destination, .. } | Self::Branch { destination, .. } => Some(destination),
-            Self::BranchTable { .. } => None,
-            _ => {
-                debug_assert!(!self.opcode().is_branch());
-                None
-            }
-        }
-    }
-
-    /// Get a mutable reference to the single destination of this branch instruction, if it is a
-    /// single destination branch or jump.
-    ///
-    /// Multi-destination branches like `br_table` return `None`.
-    pub fn branch_destination_mut(&mut self) -> Option<&mut Block> {
-        match *self {
+    /// `br_table` returns the empty slice.
+    pub fn branch_destination_mut<'a>(
+        &'a mut self,
+        jump_tables: &'a mut ir::JumpTables,
+    ) -> &mut [BlockCall] {
+        match self {
             Self::Jump {
                 ref mut destination,
                 ..
+            } => std::slice::from_mut(destination),
+            Self::Brif { blocks, .. } => blocks.as_mut_slice(),
+            Self::BranchTable { table, .. } => {
+                jump_tables.get_mut(*table).unwrap().all_branches_mut()
             }
-            | Self::Branch {
-                ref mut destination,
-                ..
-            } => Some(destination),
-            Self::BranchTable { .. } => None,
             _ => {
                 debug_assert!(!self.opcode().is_branch());
-                None
+                &mut []
             }
         }
     }
@@ -363,20 +467,6 @@ impl InstructionData {
             _ => {}
         }
     }
-}
-
-/// Information about branch and jump instructions.
-pub enum BranchInfo<'a> {
-    /// This is not a branch or jump instruction.
-    /// This instruction will not transfer control to another block in the function, but it may still
-    /// affect control flow by returning or trapping.
-    NotABranch,
-
-    /// This is a branch or jump to a single destination block, possibly taking value arguments.
-    SingleDest(Block, &'a [Value]),
-
-    /// This is a jump table branch which can have many destination blocks and maybe one default block.
-    Table(JumpTable, Option<Block>),
 }
 
 /// Information about call instructions.

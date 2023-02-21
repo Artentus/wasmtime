@@ -19,9 +19,9 @@ use target_lexicon::{Aarch64Architecture, Architecture, OperatingSystem, Triple}
 
 // New backend:
 mod abi;
-pub(crate) mod inst;
+pub mod inst;
 mod lower;
-mod settings;
+pub mod settings;
 
 use inst::create_reg_env;
 
@@ -90,7 +90,7 @@ impl TargetIsa for AArch64Backend {
         Ok(CompiledCodeStencil {
             buffer,
             frame_size,
-            disasm: emit_result.disasm,
+            vcode: emit_result.disasm,
             value_labels_ranges,
             sized_stackslot_offsets,
             dynamic_stackslot_offsets,
@@ -195,6 +195,22 @@ impl TargetIsa for AArch64Backend {
         // 4-byte alignment.
         32
     }
+
+    #[cfg(feature = "disas")]
+    fn to_capstone(&self) -> Result<capstone::Capstone, capstone::Error> {
+        use capstone::prelude::*;
+        let mut cs = Capstone::new()
+            .arm64()
+            .mode(arch::arm64::ArchMode::Arm)
+            .build()?;
+        // AArch64 uses inline constants rather than a separate constant pool right now.
+        // Without this option, Capstone will stop disassembling as soon as it sees
+        // an inline constant that is not also a valid instruction. With this option,
+        // Capstone will print a `.byte` directive with the bytes of the inline constant
+        // and continue to the next instruction.
+        cs.set_skipdata(true)?;
+        Ok(cs)
+    }
 }
 
 impl fmt::Display for AArch64Backend {
@@ -293,15 +309,12 @@ mod test {
         pos.insert_block(bb0);
         let v0 = pos.ins().iconst(I32, 0x1234);
         let v1 = pos.ins().iadd(arg0, v0);
-        pos.ins().brnz(v1, bb1, &[]);
-        pos.ins().jump(bb2, &[]);
+        pos.ins().brif(v1, bb1, &[], bb2, &[]);
         pos.insert_block(bb1);
-        pos.ins().brnz(v1, bb2, &[]);
-        pos.ins().jump(bb3, &[]);
+        pos.ins().brif(v1, bb2, &[], bb3, &[]);
         pos.insert_block(bb2);
         let v2 = pos.ins().iadd(v1, v0);
-        pos.ins().brnz(v2, bb2, &[]);
-        pos.ins().jump(bb1, &[]);
+        pos.ins().brif(v2, bb2, &[], bb1, &[]);
         pos.insert_block(bb3);
         let v3 = pos.ins().isub(v1, v0);
         pos.ins().return_(&[v3]);
@@ -364,11 +377,15 @@ mod test {
         let mut pos = FuncCursor::new(&mut func);
 
         pos.insert_block(bb0);
-        let mut jt_data = JumpTableData::new();
-        jt_data.push_entry(bb1);
-        jt_data.push_entry(bb2);
+        let jt_data = JumpTableData::new(
+            pos.func.dfg.block_call(bb3, &[]),
+            &[
+                pos.func.dfg.block_call(bb1, &[]),
+                pos.func.dfg.block_call(bb2, &[]),
+            ],
+        );
         let jt = pos.func.create_jump_table(jt_data);
-        pos.ins().br_table(arg0, bb3, jt);
+        pos.ins().br_table(arg0, jt);
 
         pos.insert_block(bb1);
         let v1 = pos.ins().iconst(I32, 1);

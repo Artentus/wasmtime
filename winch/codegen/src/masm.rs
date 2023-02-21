@@ -1,11 +1,28 @@
-use crate::abi::align_to;
-use crate::abi::{addressing_mode::Address, local::LocalSlot};
+use crate::abi::{align_to, LocalSlot};
+use crate::codegen::CodeGenContext;
 use crate::isa::reg::Reg;
 use crate::regalloc::RegAlloc;
-use std::ops::Range;
+use cranelift_codegen::{Final, MachBufferFinalized};
+use std::{fmt::Debug, ops::Range};
+
+#[derive(Eq, PartialEq)]
+pub(crate) enum DivKind {
+    /// Signed division.
+    Signed,
+    /// Unsigned division.
+    Unsigned,
+}
+
+/// Remainder kind.
+pub(crate) enum RemKind {
+    /// Signed remainder.
+    Signed,
+    /// Unsigned remainder.
+    Unsigned,
+}
 
 /// Operand size, in bits.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub(crate) enum OperandSize {
     /// 32 bits.
     S32,
@@ -18,8 +35,8 @@ pub(crate) enum OperandSize {
 pub(crate) enum RegImm {
     /// A register.
     Reg(Reg),
-    /// An immediate.
-    Imm(i32),
+    /// 64-bit signed immediate.
+    Imm(i64),
 }
 
 impl RegImm {
@@ -29,7 +46,7 @@ impl RegImm {
     }
 
     /// Immediate constructor.
-    pub fn imm(imm: i32) -> Self {
+    pub fn imm(imm: i64) -> Self {
         RegImm::Imm(imm)
     }
 }
@@ -58,6 +75,9 @@ impl From<Reg> for RegImm {
 /// where needed, in the case of architectures that use a two-argument form.
 
 pub(crate) trait MacroAssembler {
+    /// The addressing mode.
+    type Address;
+
     /// Emit the function prologue.
     fn prologue(&mut self);
 
@@ -68,16 +88,16 @@ pub(crate) trait MacroAssembler {
     fn reserve_stack(&mut self, bytes: u32);
 
     /// Get the address of a local slot.
-    fn local_address(&mut self, local: &LocalSlot) -> Address;
+    fn local_address(&mut self, local: &LocalSlot) -> Self::Address;
 
     /// Get stack pointer offset.
     fn sp_offset(&mut self) -> u32;
 
     /// Perform a stack store.
-    fn store(&mut self, src: RegImm, dst: Address, size: OperandSize);
+    fn store(&mut self, src: RegImm, dst: Self::Address, size: OperandSize);
 
     /// Perform a stack load.
-    fn load(&mut self, src: Address, dst: Reg, size: OperandSize);
+    fn load(&mut self, src: Self::Address, dst: Reg, size: OperandSize);
 
     /// Perform a move.
     fn mov(&mut self, src: RegImm, dst: RegImm, size: OperandSize);
@@ -85,12 +105,33 @@ pub(crate) trait MacroAssembler {
     /// Perform add operation.
     fn add(&mut self, dst: RegImm, lhs: RegImm, rhs: RegImm, size: OperandSize);
 
+    /// Perform subtraction operation.
+    fn sub(&mut self, dst: RegImm, lhs: RegImm, rhs: RegImm, size: OperandSize);
+
+    /// Perform multiplication operation.
+    fn mul(&mut self, dst: RegImm, lhs: RegImm, rhs: RegImm, size: OperandSize);
+
+    /// Perform division operation.
+    /// Division is special in that some architectures have specific
+    /// expectations regarding the location of the instruction
+    /// arguments and regarding the location of the quotient /
+    /// remainder. To free the caller from having to deal with the
+    /// architecure specific contraints we give this function access
+    /// to the code generation context, allowing each implementation
+    /// to decide the lowering path.  For cases in which division is a
+    /// unconstrained binary operation, the caller can decide to use
+    /// the `CodeGenContext::i32_binop` or `CodeGenContext::i64_binop`
+    /// functions.
+    fn div(&mut self, context: &mut CodeGenContext, kind: DivKind, size: OperandSize);
+
+    /// Calculate remainder.
+    fn rem(&mut self, context: &mut CodeGenContext, kind: RemKind, size: OperandSize);
+
     /// Push the register to the stack, returning the offset.
     fn push(&mut self, src: Reg) -> u32;
 
     /// Finalize the assembly and return the result.
-    // NOTE Interim, debug approach
-    fn finalize(&mut self) -> &[String];
+    fn finalize(self) -> MachBufferFinalized<Final>;
 
     /// Zero a particular register.
     fn zero(&mut self, reg: Reg);
@@ -111,7 +152,7 @@ pub(crate) trait MacroAssembler {
             // Ensure that the start of the range is at least 4-byte aligned.
             assert!(mem.start % 4 == 0);
             let start = align_to(mem.start, word_size);
-            let addr = self.local_address(&LocalSlot::i32(start));
+            let addr: Self::Address = self.local_address(&LocalSlot::i32(start));
             self.store(RegImm::imm(0), addr, OperandSize::S32);
             // Ensure that the new start of the range, is word-size aligned.
             assert!(start % word_size == 0);
@@ -123,7 +164,7 @@ pub(crate) trait MacroAssembler {
 
         if slots == 1 {
             let slot = LocalSlot::i64(start + word_size);
-            let addr = self.local_address(&slot);
+            let addr: Self::Address = self.local_address(&slot);
             self.store(RegImm::imm(0), addr, OperandSize::S64);
         } else {
             // TODO
@@ -136,7 +177,7 @@ pub(crate) trait MacroAssembler {
 
             for step in (start..end).into_iter().step_by(word_size as usize) {
                 let slot = LocalSlot::i64(step + word_size);
-                let addr = self.local_address(&slot);
+                let addr: Self::Address = self.local_address(&slot);
                 self.store(zero, addr, OperandSize::S64);
             }
         }

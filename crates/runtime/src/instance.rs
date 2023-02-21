@@ -7,7 +7,7 @@ use crate::externref::VMExternRefActivationsTable;
 use crate::memory::{Memory, RuntimeMemoryCreator};
 use crate::table::{Table, TableElement, TableElementType};
 use crate::vmcontext::{
-    VMBuiltinFunctionsArray, VMCallerCheckedAnyfunc, VMContext, VMFunctionImport,
+    VMBuiltinFunctionsArray, VMCallerCheckedFuncRef, VMContext, VMFunctionImport,
     VMGlobalDefinition, VMGlobalImport, VMMemoryDefinition, VMMemoryImport, VMOpaqueContext,
     VMRuntimeLimits, VMTableDefinition, VMTableImport, VMCONTEXT_MAGIC,
 };
@@ -16,8 +16,9 @@ use crate::{
     VMFunctionBody, VMSharedSignatureIndex,
 };
 use anyhow::Error;
+use anyhow::Result;
 use memoffset::offset_of;
-use std::alloc::Layout;
+use std::alloc::{self, Layout};
 use std::any::Any;
 use std::convert::TryFrom;
 use std::hash::Hash;
@@ -87,6 +88,13 @@ pub(crate) struct Instance {
     /// allocation, but some host-defined objects will store their state here.
     host_state: Box<dyn Any + Send + Sync>,
 
+    /// Instance of this instance within its `InstanceAllocator` trait
+    /// implementation.
+    ///
+    /// This is always 0 for the on-demand instance allocator and it's the
+    /// index of the slot in the pooling allocator.
+    index: usize,
+
     /// Additional context used by compiled wasm code. This field is last, and
     /// represents a dynamically-sized array that extends beyond the nominal
     /// end of the struct (similar to a flexible array member).
@@ -99,15 +107,19 @@ impl Instance {
     ///
     /// It is assumed the memory was properly aligned and the
     /// allocation was `alloc_size` in bytes.
-    unsafe fn new_at(
-        ptr: *mut Instance,
-        alloc_size: usize,
+    unsafe fn new(
         req: InstanceAllocationRequest,
+        index: usize,
         memories: PrimaryMap<DefinedMemoryIndex, Memory>,
         tables: PrimaryMap<DefinedTableIndex, Table>,
-    ) {
+    ) -> InstanceHandle {
         // The allocation must be *at least* the size required of `Instance`.
-        assert!(alloc_size >= Self::alloc_layout(req.runtime_info.offsets()).size());
+        let layout = Self::alloc_layout(req.runtime_info.offsets());
+        let ptr = alloc::alloc(layout);
+        if ptr.is_null() {
+            alloc::handle_alloc_error(layout);
+        }
+        let ptr = ptr.cast::<Instance>();
 
         let module = req.runtime_info.module();
         let dropped_elements = EntitySet::with_capacity(module.passive_elements.len());
@@ -117,6 +129,7 @@ impl Instance {
             ptr,
             Instance {
                 runtime_info: req.runtime_info.clone(),
+                index,
                 memories,
                 tables,
                 dropped_elements,
@@ -129,6 +142,7 @@ impl Instance {
         );
 
         (*ptr).initialize_vmctx(module, req.runtime_info.offsets(), req.store, req.imports);
+        InstanceHandle { instance: ptr }
     }
 
     /// Helper function to access various locations offset from our `*mut
@@ -320,7 +334,7 @@ impl Instance {
 
     fn get_exported_func(&mut self, index: FuncIndex) -> ExportFunction {
         let anyfunc = self.get_caller_checked_anyfunc(index).unwrap();
-        let anyfunc = NonNull::new(anyfunc as *const VMCallerCheckedAnyfunc as *mut _).unwrap();
+        let anyfunc = NonNull::new(anyfunc as *const VMCallerCheckedFuncRef as *mut _).unwrap();
         ExportFunction { anyfunc }
     }
 
@@ -484,7 +498,7 @@ impl Instance {
         Layout::from_size_align(size, align).unwrap()
     }
 
-    /// Construct a new VMCallerCheckedAnyfunc for the given function
+    /// Construct a new VMCallerCheckedFuncRef for the given function
     /// (imported or defined in this module) and store into the given
     /// location. Used during lazy initialization.
     ///
@@ -497,7 +511,7 @@ impl Instance {
         &mut self,
         index: FuncIndex,
         sig: SignatureIndex,
-        into: *mut VMCallerCheckedAnyfunc,
+        into: *mut VMCallerCheckedFuncRef,
     ) {
         let type_index = unsafe {
             let base: *const VMSharedSignatureIndex =
@@ -518,7 +532,7 @@ impl Instance {
         // Safety: we have a `&mut self`, so we have exclusive access
         // to this Instance.
         unsafe {
-            *into = VMCallerCheckedAnyfunc {
+            *into = VMCallerCheckedFuncRef {
                 vmctx,
                 type_index,
                 func_ptr: NonNull::new(func_ptr).expect("Non-null function pointer"),
@@ -526,7 +540,7 @@ impl Instance {
         }
     }
 
-    /// Get a `&VMCallerCheckedAnyfunc` for the given `FuncIndex`.
+    /// Get a `&VMCallerCheckedFuncRef` for the given `FuncIndex`.
     ///
     /// Returns `None` if the index is the reserved index value.
     ///
@@ -535,7 +549,7 @@ impl Instance {
     pub(crate) fn get_caller_checked_anyfunc(
         &mut self,
         index: FuncIndex,
-    ) -> Option<*mut VMCallerCheckedAnyfunc> {
+    ) -> Option<*mut VMCallerCheckedFuncRef> {
         if index == FuncIndex::reserved_value() {
             return None;
         }
@@ -569,8 +583,8 @@ impl Instance {
             // all!
             let func = &self.module().functions[index];
             let sig = func.signature;
-            let anyfunc: *mut VMCallerCheckedAnyfunc = self
-                .vmctx_plus_offset::<VMCallerCheckedAnyfunc>(
+            let anyfunc: *mut VMCallerCheckedFuncRef = self
+                .vmctx_plus_offset::<VMCallerCheckedFuncRef>(
                     self.offsets().vmctx_anyfunc(func.anyfunc),
                 );
             self.construct_anyfunc(index, sig, anyfunc);
@@ -1020,7 +1034,7 @@ impl Instance {
                 }
                 GlobalInit::RefFunc(f) => {
                     *(*to).as_anyfunc_mut() = self.get_caller_checked_anyfunc(f).unwrap()
-                        as *const VMCallerCheckedAnyfunc;
+                        as *const VMCallerCheckedFuncRef;
                 }
                 GlobalInit::RefNullConst => match global.wasm_ty {
                     // `VMGlobalDefinition::new()` already zeroed out the bits
@@ -1206,5 +1220,15 @@ impl InstanceHandle {
         InstanceHandle {
             instance: self.instance,
         }
+    }
+
+    /// Performs post-initialization of an instance after its handle has been
+    /// creqtaed and registered with a store.
+    ///
+    /// Failure of this function means that the instance still must persist
+    /// within the store since failure may indicate partial failure, or some
+    /// state could be referenced by other instances.
+    pub fn initialize(&mut self, module: &Module, is_bulk_memory: bool) -> Result<()> {
+        allocator::initialize_instance(self.instance_mut(), module, is_bulk_memory)
     }
 }

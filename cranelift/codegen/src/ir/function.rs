@@ -4,15 +4,12 @@
 //! instructions.
 
 use crate::entity::{PrimaryMap, SecondaryMap};
-use crate::ir;
-use crate::ir::JumpTables;
 use crate::ir::{
-    instructions::BranchInfo, Block, DynamicStackSlot, DynamicStackSlotData, DynamicType,
-    ExtFuncData, FuncRef, GlobalValue, GlobalValueData, Inst, InstructionData, JumpTable,
-    JumpTableData, Opcode, SigRef, StackSlot, StackSlotData, Table, TableData, Type,
+    self, Block, DataFlowGraph, DynamicStackSlot, DynamicStackSlotData, DynamicStackSlots,
+    DynamicType, ExtFuncData, FuncRef, GlobalValue, GlobalValueData, Inst, JumpTable,
+    JumpTableData, Layout, Opcode, SigRef, Signature, SourceLocs, StackSlot, StackSlotData,
+    StackSlots, Table, TableData, Type,
 };
-use crate::ir::{DataFlowGraph, Layout, Signature};
-use crate::ir::{DynamicStackSlots, SourceLocs, StackSlots};
 use crate::isa::CallConv;
 use crate::value_label::ValueLabelsRanges;
 use crate::write::write_function;
@@ -173,9 +170,6 @@ pub struct FunctionStencil {
     /// Tables referenced.
     pub tables: PrimaryMap<ir::Table, ir::TableData>,
 
-    /// Jump tables used in this function.
-    pub jump_tables: JumpTables,
-
     /// Data flow graph containing the primary definition of all instructions, blocks and values.
     pub dfg: DataFlowGraph,
 
@@ -203,7 +197,6 @@ impl FunctionStencil {
         self.dynamic_stack_slots.clear();
         self.global_values.clear();
         self.tables.clear();
-        self.jump_tables.clear();
         self.dfg.clear();
         self.layout.clear();
         self.srclocs.clear();
@@ -212,7 +205,7 @@ impl FunctionStencil {
 
     /// Creates a jump table in the function, to be used by `br_table` instructions.
     pub fn create_jump_table(&mut self, data: JumpTableData) -> JumpTable {
-        self.jump_tables.push(data)
+        self.dfg.jump_tables.push(data)
     }
 
     /// Creates a sized stack slot in the function, to be used by `stack_load`, `stack_store`
@@ -277,51 +270,13 @@ impl FunctionStencil {
         self.dfg.collect_debug_info();
     }
 
-    /// Changes the destination of a jump or branch instruction.
-    /// Does nothing if called with a non-jump or non-branch instruction.
-    ///
-    /// Note that this method ignores multi-destination branches like `br_table`.
-    pub fn change_branch_destination(&mut self, inst: Inst, new_dest: Block) {
-        match self.dfg.insts[inst].branch_destination_mut() {
-            None => (),
-            Some(inst_dest) => *inst_dest = new_dest,
-        }
-    }
-
     /// Rewrite the branch destination to `new_dest` if the destination matches `old_dest`.
     /// Does nothing if called with a non-jump or non-branch instruction.
-    ///
-    /// Unlike [change_branch_destination](FunctionStencil::change_branch_destination), this method
-    /// rewrite the destinations of multi-destination branches like `br_table`.
     pub fn rewrite_branch_destination(&mut self, inst: Inst, old_dest: Block, new_dest: Block) {
-        match self.dfg.analyze_branch(inst) {
-            BranchInfo::SingleDest(dest, ..) => {
-                if dest == old_dest {
-                    self.change_branch_destination(inst, new_dest);
-                }
+        for dest in self.dfg.insts[inst].branch_destination_mut(&mut self.dfg.jump_tables) {
+            if dest.block(&self.dfg.value_lists) == old_dest {
+                dest.set_block(new_dest, &mut self.dfg.value_lists)
             }
-
-            BranchInfo::Table(table, default_dest) => {
-                self.jump_tables[table].iter_mut().for_each(|entry| {
-                    if *entry == old_dest {
-                        *entry = new_dest;
-                    }
-                });
-
-                if default_dest == Some(old_dest) {
-                    match &mut self.dfg.insts[inst] {
-                        InstructionData::BranchTable { destination, .. } => {
-                            *destination = new_dest;
-                        }
-                        _ => panic!(
-                            "Unexpected instruction {} having default destination",
-                            self.dfg.display_inst(inst)
-                        ),
-                    }
-                }
-            }
-
-            BranchInfo::NotABranch => {}
         }
     }
 
@@ -439,7 +394,6 @@ impl Function {
                 dynamic_stack_slots: DynamicStackSlots::new(),
                 global_values: PrimaryMap::new(),
                 tables: PrimaryMap::new(),
-                jump_tables: PrimaryMap::new(),
                 dfg: DataFlowGraph::new(),
                 layout: Layout::new(),
                 srclocs: SecondaryMap::new(),

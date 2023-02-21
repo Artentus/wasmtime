@@ -11,7 +11,7 @@ use std::pin::Pin;
 use std::ptr::NonNull;
 use std::sync::Arc;
 use wasmtime_runtime::{
-    ExportFunction, InstanceHandle, VMCallerCheckedAnyfunc, VMContext, VMFunctionBody,
+    ExportFunction, InstanceHandle, VMCallerCheckedFuncRef, VMContext, VMFunctionBody,
     VMFunctionImport, VMHostFuncContext, VMOpaqueContext, VMSharedSignatureIndex, VMTrampoline,
 };
 
@@ -497,7 +497,7 @@ impl Func {
 
     pub(crate) unsafe fn from_caller_checked_anyfunc(
         store: &mut StoreOpaque,
-        raw: *mut VMCallerCheckedAnyfunc,
+        raw: *mut VMCallerCheckedFuncRef,
     ) -> Option<Func> {
         let anyfunc = NonNull::new(raw)?;
         debug_assert!(anyfunc.as_ref().type_index != VMSharedSignatureIndex::default());
@@ -891,7 +891,7 @@ impl Func {
 
     pub(crate) unsafe fn call_unchecked_raw<T>(
         store: &mut StoreContextMut<'_, T>,
-        anyfunc: NonNull<VMCallerCheckedAnyfunc>,
+        anyfunc: NonNull<VMCallerCheckedFuncRef>,
         trampoline: VMTrampoline,
         params_and_returns: *mut ValRaw,
     ) -> Result<()> {
@@ -1066,7 +1066,7 @@ impl Func {
     pub(crate) fn caller_checked_anyfunc(
         &self,
         store: &StoreOpaque,
-    ) -> NonNull<VMCallerCheckedAnyfunc> {
+    ) -> NonNull<VMCallerCheckedFuncRef> {
         store.store_data()[self.0].export().anyfunc
     }
 
@@ -1726,24 +1726,23 @@ impl<T> Caller<'_, T> {
 
     /// Looks up an export from the caller's module by the `name` given.
     ///
-    /// Note that when accessing and calling exported functions, one should
-    /// adhere to the guidelines of the interface types proposal.  This method
-    /// is a temporary mechanism for accessing the caller's information until
-    /// interface types has been fully standardized and implemented. The
-    /// interface types proposal will obsolete this type and this will be
-    /// removed in the future at some point after interface types is
-    /// implemented. If you're relying on this method type it's recommended to
-    /// become familiar with interface types to ensure that your use case is
-    /// covered by the proposal.
+    /// This is a low-level function that's typically used to implement passing
+    /// of pointers or indices between core Wasm instances, where the callee
+    /// needs to consult the caller's exports to perform memory management and
+    /// resolve the references.
+    ///
+    /// For comparison, in components, the component model handles translating
+    /// arguments from one component instance to another and managing memory, so
+    /// that callees don't need to be aware of their callers, which promotes
+    /// virtualizability of APIs.
     ///
     /// # Return
     ///
-    /// If a memory or function export with the `name` provided was found, then it is
-    /// returned as a `Memory`. There are a number of situations, however, where
-    /// the memory or function may not be available:
+    /// If an export with the `name` provided was found, then it is returned as an
+    /// `Extern`. There are a number of situations, however, where the export may not
+    /// be available:
     ///
     /// * The caller instance may not have an export named `name`
-    /// * The export named `name` may not be an exported memory
     /// * There may not be a caller available, for example if `Func` was called
     ///   directly from host code.
     ///

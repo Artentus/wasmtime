@@ -284,17 +284,28 @@ where
     /// the layout.
     fn optimize_skeleton_inst(&mut self, inst: Inst) -> bool {
         self.stats.skeleton_inst += 1;
-        // Not pure, but may still be a load or store:
-        // process it to see if we can optimize it.
+
+        // If a load or store, process it with the alias analysis to see
+        // if we can optimize it (rewrite in terms of an earlier load or
+        // stored value).
         if let Some(new_result) =
             self.alias_analysis
                 .process_inst(self.func, self.alias_analysis_state, inst)
         {
             self.stats.alias_analysis_removed += 1;
             let result = self.func.dfg.first_result(inst);
+            trace!(
+                " -> inst {} has result {} replaced with {}",
+                inst,
+                result,
+                new_result
+            );
             self.value_to_opt_value[result] = new_result;
             true
-        } else {
+        }
+        // Otherwise, generic side-effecting op -- always keep it, and
+        // set its results to identity-map to original values.
+        else {
             // Set all results to identity-map to themselves
             // in the value-to-opt-value map.
             for &result in self.func.dfg.inst_results(inst) {
@@ -408,12 +419,12 @@ impl<'a> EgraphPass<'a> {
                 // Rewrite args of *all* instructions using the
                 // value-to-opt-value map.
                 cursor.func.dfg.resolve_aliases_in_arguments(inst);
-                for arg in cursor.func.dfg.inst_args_mut(inst) {
-                    let new_value = value_to_opt_value[*arg];
+                cursor.func.dfg.map_inst_values(inst, |_, arg| {
+                    let new_value = value_to_opt_value[arg];
                     trace!("rewriting arg {} of inst {} to {}", arg, inst, new_value);
                     debug_assert_ne!(new_value, Value::reserved_value());
-                    *arg = new_value;
-                }
+                    new_value
+                });
 
                 // Build a context for optimization, with borrows of
                 // state. We can't invoke a method on `self` because
@@ -497,8 +508,10 @@ impl<'a> EgraphPass<'a> {
         // layout.
         for block in self.func.layout.blocks() {
             for inst in self.func.layout.block_insts(block) {
-                for &arg in self.func.dfg.inst_args(inst) {
-                    match self.func.dfg.value_def(arg) {
+                self.func
+                    .dfg
+                    .inst_values(inst)
+                    .for_each(|arg| match self.func.dfg.value_def(arg) {
                         ValueDef::Result(i, _) => {
                             debug_assert!(self.func.layout.inst_block(i).is_some());
                         }
@@ -506,8 +519,7 @@ impl<'a> EgraphPass<'a> {
                             panic!("egraph union node {} still reachable at {}!", arg, inst);
                         }
                         _ => {}
-                    }
-                }
+                    })
             }
         }
     }

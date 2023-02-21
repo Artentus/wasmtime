@@ -549,8 +549,9 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
         let cmp = builder
             .ins()
             .icmp(IntCC::SignedGreaterThanOrEqual, fuel, zero);
-        builder.ins().brnz(cmp, out_of_gas_block, &[]);
-        builder.ins().jump(continuation_block, &[]);
+        builder
+            .ins()
+            .brif(cmp, out_of_gas_block, &[], continuation_block, &[]);
         builder.seal_block(out_of_gas_block);
 
         // If we ran out of gas then we call our out-of-gas intrinsic and it
@@ -658,8 +659,9 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             cur_epoch_value,
             epoch_deadline,
         );
-        builder.ins().brnz(cmp, new_epoch_block, &[]);
-        builder.ins().jump(continuation_block, &[]);
+        builder
+            .ins()
+            .brif(cmp, new_epoch_block, &[], continuation_block, &[]);
         builder.seal_block(new_epoch_block);
 
         // In the "new epoch block", we've noticed that the epoch has
@@ -677,10 +679,13 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
             cur_epoch_value,
             fresh_epoch_deadline,
         );
-        builder
-            .ins()
-            .brnz(fresh_cmp, new_epoch_doublecheck_block, &[]);
-        builder.ins().jump(continuation_block, &[]);
+        builder.ins().brif(
+            fresh_cmp,
+            new_epoch_doublecheck_block,
+            &[],
+            continuation_block,
+            &[],
+        );
         builder.seal_block(new_epoch_doublecheck_block);
 
         builder.switch_to_block(new_epoch_doublecheck_block);
@@ -784,8 +789,9 @@ impl<'module_environment> FuncEnvironment<'module_environment> {
         let result_param = builder.append_block_param(continuation_block, pointer_type);
         builder.set_cold_block(null_block);
 
-        builder.ins().brz(value, null_block, &[]);
-        builder.ins().jump(continuation_block, &[value_masked]);
+        builder
+            .ins()
+            .brif(value, continuation_block, &[value_masked], null_block, &[]);
         builder.seal_block(null_block);
 
         builder.switch_to_block(null_block);
@@ -994,8 +1000,9 @@ impl<'module_environment> cranelift_wasm::FuncEnvironment for FuncEnvironment<'m
                 let elem = builder.ins().load(reference_type, flags, elem_addr, 0);
 
                 let elem_is_null = builder.ins().is_null(elem);
-                builder.ins().brnz(elem_is_null, continue_block, &[]);
-                builder.ins().jump(non_null_elem_block, &[]);
+                builder
+                    .ins()
+                    .brif(elem_is_null, continue_block, &[], non_null_elem_block, &[]);
 
                 // Load the `VMExternRefActivationsTable::next` bump finger and
                 // the `VMExternRefActivationsTable::end` bump boundary.
@@ -1025,8 +1032,9 @@ impl<'module_environment> cranelift_wasm::FuncEnvironment for FuncEnvironment<'m
                 // builtin to do a GC and insert this reference into the
                 // just-swept table for us.
                 let at_capacity = builder.ins().icmp(ir::condcodes::IntCC::Equal, next, end);
-                builder.ins().brnz(at_capacity, gc_block, &[]);
-                builder.ins().jump(no_gc_block, &[]);
+                builder
+                    .ins()
+                    .brif(at_capacity, gc_block, &[], no_gc_block, &[]);
                 builder.switch_to_block(gc_block);
                 let builtin_idx = BuiltinFunctionIndex::activations_table_insert_with_gc();
                 let builtin_sig = self
@@ -1161,10 +1169,13 @@ impl<'module_environment> cranelift_wasm::FuncEnvironment for FuncEnvironment<'m
                 // deallocate `value` and leave it in the table, leading to use
                 // after free.
                 let value_is_null = builder.ins().is_null(value);
-                builder
-                    .ins()
-                    .brnz(value_is_null, check_current_elem_block, &[]);
-                builder.ins().jump(inc_ref_count_block, &[]);
+                builder.ins().brif(
+                    value_is_null,
+                    check_current_elem_block,
+                    &[],
+                    inc_ref_count_block,
+                    &[],
+                );
                 builder.switch_to_block(inc_ref_count_block);
                 self.mutate_externref_ref_count(builder, value, 1);
                 builder.ins().jump(check_current_elem_block, &[]);
@@ -1190,17 +1201,21 @@ impl<'module_environment> cranelift_wasm::FuncEnvironment for FuncEnvironment<'m
                     builder
                         .ins()
                         .icmp_imm(ir::condcodes::IntCC::Equal, current_elem, 0);
-                builder
-                    .ins()
-                    .brz(current_elem_is_null, dec_ref_count_block, &[]);
-                builder.ins().jump(continue_block, &[]);
+                builder.ins().brif(
+                    current_elem_is_null,
+                    continue_block,
+                    &[],
+                    dec_ref_count_block,
+                    &[],
+                );
 
                 builder.switch_to_block(dec_ref_count_block);
                 let prev_ref_count = self.mutate_externref_ref_count(builder, current_elem, -1);
                 let one = builder.ins().iconst(pointer_type, 1);
                 let cond = builder.ins().icmp(IntCC::Equal, one, prev_ref_count);
-                builder.ins().brnz(cond, drop_block, &[]);
-                builder.ins().jump(continue_block, &[]);
+                builder
+                    .ins()
+                    .brif(cond, drop_block, &[], continue_block, &[]);
 
                 // Call the `drop_externref` builtin to (you guessed it) drop
                 // the `externref`.
@@ -1571,21 +1586,21 @@ impl<'module_environment> cranelift_wasm::FuncEnvironment for FuncEnvironment<'m
     ) -> WasmResult<ir::Inst> {
         let pointer_type = self.pointer_type();
 
-        // Get the anyfunc pointer (the funcref) from the table.
-        let anyfunc_ptr = self.get_or_init_funcref_table_elem(builder, table_index, table, callee);
+        // Get the funcref pointer from the table.
+        let funcref_ptr = self.get_or_init_funcref_table_elem(builder, table_index, table, callee);
 
         // Check for whether the table element is null, and trap if so.
         builder
             .ins()
-            .trapz(anyfunc_ptr, ir::TrapCode::IndirectCallToNull);
+            .trapz(funcref_ptr, ir::TrapCode::IndirectCallToNull);
 
-        // Dereference anyfunc pointer to get the function address.
+        // Dereference the funcref pointer to get the function address.
         let mem_flags = ir::MemFlags::trusted();
         let func_addr = builder.ins().load(
             pointer_type,
             mem_flags,
-            anyfunc_ptr,
-            i32::from(self.offsets.ptr.vmcaller_checked_anyfunc_func_ptr()),
+            funcref_ptr,
+            i32::from(self.offsets.ptr.vmcaller_checked_func_ref_func_ptr()),
         );
 
         // If necessary, check the signature.
@@ -1597,7 +1612,7 @@ impl<'module_environment> cranelift_wasm::FuncEnvironment for FuncEnvironment<'m
                 let base = builder.ins().global_value(pointer_type, vmctx);
 
                 // Load the caller ID. This requires loading the
-                // `*mut VMCallerCheckedAnyfunc` base pointer from `VMContext`
+                // `*mut VMCallerCheckedFuncRef` base pointer from `VMContext`
                 // and then loading, based on `SignatureIndex`, the
                 // corresponding entry.
                 let mem_flags = ir::MemFlags::trusted().with_readonly();
@@ -1620,8 +1635,8 @@ impl<'module_environment> cranelift_wasm::FuncEnvironment for FuncEnvironment<'m
                 let callee_sig_id = builder.ins().load(
                     sig_id_type,
                     mem_flags,
-                    anyfunc_ptr,
-                    i32::from(self.offsets.ptr.vmcaller_checked_anyfunc_type_index()),
+                    funcref_ptr,
+                    i32::from(self.offsets.ptr.vmcaller_checked_func_ref_type_index()),
                 );
 
                 // Check that they match.
@@ -1642,8 +1657,8 @@ impl<'module_environment> cranelift_wasm::FuncEnvironment for FuncEnvironment<'m
         let vmctx = builder.ins().load(
             pointer_type,
             mem_flags,
-            anyfunc_ptr,
-            i32::from(self.offsets.ptr.vmcaller_checked_anyfunc_vmctx()),
+            funcref_ptr,
+            i32::from(self.offsets.ptr.vmcaller_checked_func_ref_vmctx()),
         );
         real_call_args.push(vmctx);
         real_call_args.push(caller_vmctx);

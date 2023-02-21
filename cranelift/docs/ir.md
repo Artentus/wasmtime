@@ -49,8 +49,7 @@ function %average(i32, i32) -> f32 system_v {
 block1(v0: i32, v1: i32):
     v2 = f64const 0x0.0
     stack_store v2, ss0
-    brz v1, block5                  ; Handle count == 0.
-    jump block2
+    brif v1, block2, block5                  ; Handle count == 0.
 
 block2:
     v3 = iconst.i32 0
@@ -66,8 +65,7 @@ block3(v4: i32):
     stack_store v10, ss0
     v11 = iadd_imm v4, 1
     v12 = icmp ult v11, v1
-    brnz v12, block3(v11)           ; Loop backedge.
-    jump block4
+    brif v12, block3(v11), block4 ; Loop backedge.
 
 block4:
     v13 = stack_load.f64 ss0
@@ -353,7 +351,7 @@ paramlist    : param { "," param }
 retlist      : paramlist
 param        : type [paramext] [paramspecial]
 paramext     : "uext" | "sext"
-paramspecial : "sarg" ( num ) | "sret" | "vmctx" | "sigid" | "stack_limit"
+paramspecial : "sarg" ( num ) | "sret" | "vmctx" | "stack_limit"
 callconv     : "fast" | "cold" | "system_v" | "windows_fastcall"
              | "wasmtime_system_v" | "wasmtime_fastcall"
              | "apple_aarch64" | "wasmtime_apple_aarch64"
@@ -368,12 +366,9 @@ system, a function's calling convention is only fully determined by a
 
 | Name      | Description |
 | ----------| ----------  |
+| sarg      | pointer to a struct argument of the given size |
 | sret      | pointer to a return value in memory |
-| link      | return address |
-| fp        | the initial value of the frame pointer |
-| csr       | callee-saved register |
 | vmctx     | VM context pointer, which may contain pointers to heaps etc. |
-| sigid     | signature id, for checking caller/callee signature compatibility |
 | stack_limit | limit value for the size of the stack |
 
 | Name      | Description |
@@ -414,8 +409,7 @@ function %gcd(i32 uext, i32 uext) -> i32 uext system_v {
     fn0 = %divmod(i32 uext, i32 uext) -> i32 uext, i32 uext
 
 block1(v0: i32, v1: i32):
-    brz v1, block3
-    jump block2
+    brif v1, block2, block3
 
 block2:
     v2, v3 = call fn0(v0, v1)

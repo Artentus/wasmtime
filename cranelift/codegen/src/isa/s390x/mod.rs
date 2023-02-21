@@ -87,7 +87,7 @@ impl TargetIsa for S390xBackend {
         Ok(CompiledCodeStencil {
             buffer,
             frame_size,
-            disasm: emit_result.disasm,
+            vcode: emit_result.disasm,
             value_labels_ranges,
             sized_stackslot_offsets,
             dynamic_stackslot_offsets,
@@ -169,6 +169,19 @@ impl TargetIsa for S390xBackend {
 
     fn function_alignment(&self) -> u32 {
         4
+    }
+
+    #[cfg(feature = "disas")]
+    fn to_capstone(&self) -> Result<capstone::Capstone, capstone::Error> {
+        use capstone::prelude::*;
+        let mut cs = Capstone::new()
+            .sysz()
+            .mode(arch::sysz::ArchMode::Default)
+            .build()?;
+
+        cs.set_skipdata(true)?;
+
+        Ok(cs)
     }
 }
 
@@ -265,15 +278,12 @@ mod test {
         pos.insert_block(bb0);
         let v0 = pos.ins().iconst(I32, 0x1234);
         let v1 = pos.ins().iadd(arg0, v0);
-        pos.ins().brnz(v1, bb1, &[]);
-        pos.ins().jump(bb2, &[]);
+        pos.ins().brif(v1, bb1, &[], bb2, &[]);
         pos.insert_block(bb1);
-        pos.ins().brnz(v1, bb2, &[]);
-        pos.ins().jump(bb3, &[]);
+        pos.ins().brif(v1, bb2, &[], bb3, &[]);
         pos.insert_block(bb2);
         let v2 = pos.ins().iadd(v1, v0);
-        pos.ins().brnz(v2, bb2, &[]);
-        pos.ins().jump(bb1, &[]);
+        pos.ins().brif(v2, bb2, &[], bb1, &[]);
         pos.insert_block(bb3);
         let v3 = pos.ins().isub(v1, v0);
         pos.ins().return_(&[v3]);

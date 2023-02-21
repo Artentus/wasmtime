@@ -580,7 +580,7 @@
       (sub ty (zero_reg) x))
 
 ;; `i128`
-(rule 2 (lower (has_type $I128 (ineg x)))  
+(rule 2 (lower (has_type $I128 (ineg x)))
       (sub_i128 (value_regs_zero) x))
 
 ;; vectors.
@@ -1052,77 +1052,81 @@
 (rule -2 (lower (has_type (ty_vec128 ty) (bnot x)))
       (not x (vector_size ty)))
 
+;; Special-cases for fusing a bnot with bxor
+(rule 2 (lower (has_type (fits_in_64 ty) (bnot (bxor x y))))
+      (alu_rs_imm_logic (ALUOp.EorNot) ty x y))
+(rule 3 (lower (has_type $I128 (bnot (bxor x y)))) (i128_alu_bitop (ALUOp.EorNot) $I64 x y))
+
 ;;;; Rules for `band` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule -1 (lower (has_type (fits_in_32 ty) (band x y)))
+(rule -1 (lower (has_type (fits_in_64 ty) (band x y)))
       (alu_rs_imm_logic_commutative (ALUOp.And) ty x y))
-
-(rule (lower (has_type $I64 (band x y)))
-      (alu_rs_imm_logic_commutative (ALUOp.And) $I64 x y))
 
 (rule (lower (has_type $I128 (band x y))) (i128_alu_bitop (ALUOp.And) $I64 x y))
 
 (rule -2 (lower (has_type (ty_vec128 ty) (band x y)))
       (and_vec x y (vector_size ty)))
 
+;; Specialized lowerings for `(band x (bnot y))` which is additionally produced
+;; by Cranelift's `band_not` instruction that is legalized into the simpler
+;; forms early on.
+
+(rule 1 (lower (has_type (fits_in_64 ty) (band x (bnot y))))
+      (alu_rs_imm_logic (ALUOp.AndNot) ty x y))
+(rule 2 (lower (has_type (fits_in_64 ty) (band (bnot y) x)))
+      (alu_rs_imm_logic (ALUOp.AndNot) ty x y))
+
+(rule 3 (lower (has_type $I128 (band x (bnot y)))) (i128_alu_bitop (ALUOp.AndNot) $I64 x y))
+(rule 4 (lower (has_type $I128 (band (bnot y) x))) (i128_alu_bitop (ALUOp.AndNot) $I64 x y))
+
+(rule 5 (lower (has_type (ty_vec128 ty) (band x (bnot y))))
+      (bic_vec x y (vector_size ty)))
+(rule 6 (lower (has_type (ty_vec128 ty) (band (bnot y) x)))
+      (bic_vec x y (vector_size ty)))
+
 ;;;; Rules for `bor` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule -1 (lower (has_type (fits_in_32 ty) (bor x y)))
+(rule -1 (lower (has_type (fits_in_64 ty) (bor x y)))
       (alu_rs_imm_logic_commutative (ALUOp.Orr) ty x y))
-
-(rule (lower (has_type $I64 (bor x y)))
-      (alu_rs_imm_logic_commutative (ALUOp.Orr) $I64 x y))
 
 (rule (lower (has_type $I128 (bor x y))) (i128_alu_bitop (ALUOp.Orr) $I64 x y))
 
 (rule -2 (lower (has_type (ty_vec128 ty) (bor x y)))
       (orr_vec x y (vector_size ty)))
 
+;; Specialized lowerings for `(bor x (bnot y))` which is additionally produced
+;; by Cranelift's `bor_not` instruction that is legalized into the simpler
+;; forms early on.
+
+(rule 1 (lower (has_type (fits_in_64 ty) (bor x (bnot y))))
+      (alu_rs_imm_logic (ALUOp.OrrNot) ty x y))
+(rule 2 (lower (has_type (fits_in_64 ty) (bor (bnot y) x)))
+      (alu_rs_imm_logic (ALUOp.OrrNot) ty x y))
+
+(rule 3 (lower (has_type $I128 (bor x (bnot y)))) (i128_alu_bitop (ALUOp.OrrNot) $I64 x y))
+(rule 4 (lower (has_type $I128 (bor (bnot y) x))) (i128_alu_bitop (ALUOp.OrrNot) $I64 x y))
+
 ;;;; Rules for `bxor` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule -1 (lower (has_type (fits_in_32 ty) (bxor x y)))
+(rule -1 (lower (has_type (fits_in_64 ty) (bxor x y)))
       (alu_rs_imm_logic_commutative (ALUOp.Eor) ty x y))
-
-(rule (lower (has_type $I64 (bxor x y)))
-      (alu_rs_imm_logic_commutative (ALUOp.Eor) $I64 x y))
 
 (rule (lower (has_type $I128 (bxor x y))) (i128_alu_bitop (ALUOp.Eor) $I64 x y))
 
 (rule -2 (lower (has_type (ty_vec128 ty) (bxor x y)))
       (eor_vec x y (vector_size ty)))
 
-;;;; Rules for `band_not` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Specialized lowerings for `(bxor x (bnot y))` which is additionally produced
+;; by Cranelift's `bxor_not` instruction that is legalized into the simpler
+;; forms early on.
 
-(rule -1 (lower (has_type (fits_in_32 ty) (band_not x y)))
-      (alu_rs_imm_logic (ALUOp.AndNot) ty x y))
+(rule 1 (lower (has_type (fits_in_64 ty) (bxor x (bnot y))))
+      (alu_rs_imm_logic (ALUOp.EorNot) ty x y))
+(rule 2 (lower (has_type (fits_in_64 ty) (bxor (bnot y) x)))
+      (alu_rs_imm_logic (ALUOp.EorNot) ty x y))
 
-(rule (lower (has_type $I64 (band_not x y)))
-      (alu_rs_imm_logic (ALUOp.AndNot) $I64 x y))
-
-(rule (lower (has_type $I128 (band_not x y))) (i128_alu_bitop (ALUOp.AndNot) $I64 x y))
-
-(rule -2 (lower (has_type (ty_vec128 ty) (band_not x y)))
-      (bic_vec x y (vector_size ty)))
-
-;;;; Rules for `bor_not` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(rule -1 (lower (has_type (fits_in_32 ty) (bor_not x y)))
-      (alu_rs_imm_logic (ALUOp.OrrNot) ty x y))
-
-(rule (lower (has_type $I64 (bor_not x y)))
-      (alu_rs_imm_logic (ALUOp.OrrNot) $I64 x y))
-
-(rule (lower (has_type $I128 (bor_not x y))) (i128_alu_bitop (ALUOp.OrrNot) $I64 x y))
-
-;;;; Rules for `bxor_not` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(rule -1 (lower (has_type (fits_in_32 ty) (bxor_not x y)))
-      (alu_rs_imm_logic (ALUOp.EorNot) $I32 x y))
-
-(rule (lower (has_type $I64 (bxor_not x y)))
-      (alu_rs_imm_logic (ALUOp.EorNot) $I64 x y))
-
-(rule (lower (has_type $I128 (bxor_not x y))) (i128_alu_bitop (ALUOp.EorNot) $I64 x y))
+(rule 3 (lower (has_type $I128 (bxor x (bnot y)))) (i128_alu_bitop (ALUOp.EorNot) $I64 x y))
+(rule 4 (lower (has_type $I128 (bxor (bnot y) x))) (i128_alu_bitop (ALUOp.EorNot) $I64 x y))
 
 ;;;; Rules for `ishl` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -2407,7 +2411,7 @@
 ;; sign extended. We then check if the output sign bit has flipped.
 (rule 0 (lower (has_type (fits_in_16 ty) (iadd_cout a b)))
       (let ((extend ExtendOp (lower_extend_op ty $true))
-            
+
             ;; Instead of emitting two `sxt{b,h}` we do one as an instruction and
             ;; the other as an extend operation in the `add` instruction.
             ;;
@@ -2417,7 +2421,7 @@
             ;; cset    out_carry, ne
             (a_sext Reg (put_in_reg_sext32 a))
             (out Reg (add_extend_op ty a_sext b extend))
-            (out_carry Reg (with_flags_reg 
+            (out_carry Reg (with_flags_reg
                   (cmp_extend (OperandSize.Size32) out out extend)
                   (cset (Cond.Ne)))))
       (output_pair
@@ -2461,22 +2465,10 @@
 (rule (lower (fvpromote_low val))
       (vec_rr_long (VecRRLongOp.Fcvtl32) val $false))
 
-;;; Rules for `brz`/`brnz` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Rules for `brif` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; `brz` following `icmp`
-(rule (lower_branch (brz (maybe_uextend (icmp cc x @ (value_type ty) y)) _ _) targets)
-      (let ((comparison FlagsAndCC (lower_icmp_into_flags cc x y ty))
-            ;; Negate the condition for `brz`.
-            (cond Cond (invert_cond (cond_code (flags_and_cc_cc comparison))))
-            (taken BranchTarget (branch_target targets 0))
-            (not_taken BranchTarget (branch_target targets 1)))
-        (emit_side_effect
-         (with_flags_side_effect (flags_and_cc_flags comparison)
-                                 (cond_br taken
-                                          not_taken
-                                          (cond_br_cond cond))))))
-;; `brnz` following `icmp`
-(rule (lower_branch (brnz (maybe_uextend (icmp cc x @ (value_type ty) y)) _ _) targets)
+;; `brif` following `icmp`
+(rule (lower_branch (brif (maybe_uextend (icmp cc x @ (value_type ty) y)) _ _) targets)
       (let ((comparison FlagsAndCC (lower_icmp_into_flags cc x y ty))
             (cond Cond (cond_code (flags_and_cc_cc comparison)))
             (taken BranchTarget (branch_target targets 0))
@@ -2486,18 +2478,9 @@
                                  (cond_br taken
                                           not_taken
                                           (cond_br_cond cond))))))
-;; `brz` following `fcmp`
-(rule (lower_branch (brz (maybe_uextend (fcmp cc x @ (value_type (ty_scalar_float ty)) y)) _ _) targets)
-      (let ((cond Cond (fp_cond_code cc))
-            (cond Cond (invert_cond cond)) ;; negate for `brz`
-            (taken BranchTarget (branch_target targets 0))
-            (not_taken BranchTarget (branch_target targets 1)))
-       (emit_side_effect
-        (with_flags_side_effect (fpu_cmp (scalar_size ty) x y)
-                                (cond_br taken not_taken
-                                 (cond_br_cond cond))))))
-;; `brnz` following `fcmp`
-(rule (lower_branch (brnz (maybe_uextend (fcmp cc x @ (value_type (ty_scalar_float ty)) y)) _ _) targets)
+
+;; `brif` following `fcmp`
+(rule (lower_branch (brif (maybe_uextend (fcmp cc x @ (value_type (ty_scalar_float ty)) y)) _ _) targets)
       (let ((cond Cond (fp_cond_code cc))
             (taken BranchTarget (branch_target targets 0))
             (not_taken BranchTarget (branch_target targets 1)))
@@ -2505,29 +2488,9 @@
         (with_flags_side_effect (fpu_cmp (scalar_size ty) x y)
                                 (cond_br taken not_taken
                                  (cond_br_cond cond))))))
-;; standard `brz`
-(rule -1 (lower_branch (brz c @ (value_type $I128) _ _) targets)
-      (let ((flags ProducesFlags (flags_to_producesflags c))
-            (c ValueRegs (put_in_regs c))
-            (c_lo Reg (value_regs_get c 0))
-            (c_hi Reg (value_regs_get c 1))
-            (rt Reg (orr $I64 c_lo c_hi))
-            (taken BranchTarget (branch_target targets 0))
-            (not_taken BranchTarget (branch_target targets 1)))
-       (emit_side_effect
-        (with_flags_side_effect flags
-         (cond_br taken not_taken (cond_br_zero rt))))))
-(rule -2 (lower_branch (brz c @ (value_type ty) _ _) targets)
-      (if (ty_int_ref_scalar_64 ty))
-      (let ((flags ProducesFlags (flags_to_producesflags c))
-            (rt Reg (put_in_reg_zext64 c))
-            (taken BranchTarget (branch_target targets 0))
-            (not_taken BranchTarget (branch_target targets 1)))
-       (emit_side_effect
-        (with_flags_side_effect flags
-         (cond_br taken not_taken (cond_br_zero rt))))))
-;; standard `brnz`
-(rule -1 (lower_branch (brnz c @ (value_type $I128) _ _) targets)
+
+;; standard `brif`
+(rule -1 (lower_branch (brif c @ (value_type $I128) _ _) targets)
       (let ((flags ProducesFlags (flags_to_producesflags c))
             (c ValueRegs (put_in_regs c))
             (c_lo Reg (value_regs_get c 0))
@@ -2538,7 +2501,7 @@
        (emit_side_effect
         (with_flags_side_effect flags
          (cond_br taken not_taken (cond_br_not_zero rt))))))
-(rule -2 (lower_branch (brnz c @ (value_type ty) _ _) targets)
+(rule -2 (lower_branch (brif c @ (value_type ty) _ _) targets)
       (if (ty_int_ref_scalar_64 ty))
       (let ((flags ProducesFlags (flags_to_producesflags c))
             (rt Reg (put_in_reg_zext64 c))
@@ -2550,14 +2513,14 @@
 
 ;;; Rules for `jump` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule (lower_branch (jump _ _) targets)
+(rule (lower_branch (jump _) targets)
       (emit_side_effect (aarch64_jump (branch_target targets 0))))
 
 ;;; Rules for `br_table` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; `targets` contains the default target with the list of branch targets
 ;; concatenated.
-(rule (lower_branch (br_table idx _ _) targets)
+(rule (lower_branch (br_table idx _) targets)
       (let ((jt_size u32 (targets_jt_size targets))
             (_ InstOutput (side_effect
                   (emit_island (targets_jt_space targets))))

@@ -14,11 +14,8 @@ use core::mem;
 use cranelift_codegen::cursor::{Cursor, FuncCursor};
 use cranelift_codegen::entity::{EntityList, EntitySet, ListPool, SecondaryMap};
 use cranelift_codegen::ir::immediates::{Ieee32, Ieee64};
-use cranelift_codegen::ir::instructions::BranchInfo;
 use cranelift_codegen::ir::types::{F32, F64, I128, I64};
-use cranelift_codegen::ir::{
-    Block, Function, Inst, InstBuilder, InstructionData, JumpTableData, Type, Value,
-};
+use cranelift_codegen::ir::{Block, Function, Inst, InstBuilder, Type, Value};
 use cranelift_codegen::packed_option::PackedOption;
 
 /// Structure containing the data relevant the construction of SSA for a given function.
@@ -491,7 +488,6 @@ impl SSABuilder {
         &mut self,
         func: &mut Function,
         sentinel: Value,
-        var: Variable,
         dest_block: Block,
     ) -> Value {
         // Determine how many predecessors are yielding unique, non-temporary Values. If a variable
@@ -548,85 +544,23 @@ impl SSABuilder {
             // There is disagreement in the predecessors on which value to use so we have
             // to keep the block argument.
             let mut preds = self.ssa_blocks[dest_block].predecessors;
-            let var_defs = &mut self.variables[var];
+            let dfg = &mut func.stencil.dfg;
             for (idx, &val) in results.as_slice().iter().enumerate() {
                 let pred = preds.get_mut(idx, &mut self.inst_pool).unwrap();
                 let branch = *pred;
-                if let Some((new_block, new_branch)) =
-                    Self::append_jump_argument(func, branch, dest_block, val)
-                {
-                    *pred = new_branch;
-                    let old_block = func.layout.inst_block(branch).unwrap();
-                    self.ssa_blocks[new_block] = SSABlockData {
-                        predecessors: EntityList::from_slice(&[branch], &mut self.inst_pool),
-                        sealed: Sealed::Yes,
-                        single_predecessor: PackedOption::from(old_block),
-                    };
-                    var_defs[new_block] = PackedOption::from(val);
-                    self.side_effects.split_blocks_created.push(new_block);
+
+                let dests = dfg.insts[branch].branch_destination_mut(&mut dfg.jump_tables);
+                assert!(
+                    !dests.is_empty(),
+                    "you have declared a non-branch instruction as a predecessor to a block!"
+                );
+                for block in dests {
+                    if block.block(&dfg.value_lists) == dest_block {
+                        block.append_argument(val, &mut dfg.value_lists);
+                    }
                 }
             }
             sentinel
-        }
-    }
-
-    /// Appends a jump argument to a jump instruction, returns block created in case of
-    /// critical edge splitting.
-    fn append_jump_argument(
-        func: &mut Function,
-        branch: Inst,
-        dest_block: Block,
-        val: Value,
-    ) -> Option<(Block, Inst)> {
-        match func.dfg.analyze_branch(branch) {
-            BranchInfo::NotABranch => {
-                panic!("you have declared a non-branch instruction as a predecessor to a block");
-            }
-            // For a single destination appending a jump argument to the instruction
-            // is sufficient.
-            BranchInfo::SingleDest(_, _) => {
-                func.dfg.append_inst_arg(branch, val);
-                None
-            }
-            BranchInfo::Table(mut jt, _default_block) => {
-                // In the case of a jump table, the situation is tricky because br_table doesn't
-                // support arguments. We have to split the critical edge.
-                let middle_block = func.dfg.make_block();
-                func.layout.append_block(middle_block);
-
-                let table = &func.jump_tables[jt];
-                let mut copied = JumpTableData::with_capacity(table.len());
-                let mut changed = false;
-                for &destination in table.iter() {
-                    if destination == dest_block {
-                        copied.push_entry(middle_block);
-                        changed = true;
-                    } else {
-                        copied.push_entry(destination);
-                    }
-                }
-
-                if changed {
-                    jt = func.create_jump_table(copied);
-                }
-
-                // Redo the match from `analyze_branch` but this time capture mutable references
-                match &mut func.dfg.insts[branch] {
-                    InstructionData::BranchTable {
-                        destination, table, ..
-                    } => {
-                        if *destination == dest_block {
-                            *destination = middle_block;
-                        }
-                        *table = jt;
-                    }
-                    _ => unreachable!(),
-                }
-
-                let mut cur = FuncCursor::new(func).at_bottom(middle_block);
-                let middle_jump_inst = cur.ins().jump(dest_block, &[val]);
-                Some((middle_block, middle_jump_inst))
-            }
         }
     }
 
@@ -661,7 +595,7 @@ impl SSABuilder {
                     self.use_var_nonlocal(func, var, ty, block);
                 }
                 Call::FinishPredecessorsLookup(sentinel, dest_block) => {
-                    let val = self.finish_predecessors_lookup(func, sentinel, var, dest_block);
+                    let val = self.finish_predecessors_lookup(func, sentinel, dest_block);
                     self.results.push(val);
                 }
             }
@@ -677,7 +611,7 @@ mod tests {
     use crate::Variable;
     use cranelift_codegen::cursor::{Cursor, FuncCursor};
     use cranelift_codegen::entity::EntityRef;
-    use cranelift_codegen::ir::instructions::BranchInfo;
+    use cranelift_codegen::ir;
     use cranelift_codegen::ir::types::*;
     use cranelift_codegen::ir::{Function, Inst, InstBuilder, JumpTableData, Opcode};
     use cranelift_codegen::settings;
@@ -744,8 +678,7 @@ mod tests {
         //    x = 1;
         //    y = 2;
         //    z = x + y;
-        //    brnz y, block1;
-        //    jump block1;
+        //    brif y, block1, block1;
         // block1:
         //    z = x + z;
         //    jump block2;
@@ -782,13 +715,9 @@ mod tests {
         };
         ssa.def_var(z_var, z1_ssa, block0);
         let y_use2 = ssa.use_var(&mut func, y_var, I32, block0).0;
-        let brnz_block0_block2: Inst = {
+        let brif_block0_block2_block1: Inst = {
             let mut cur = FuncCursor::new(&mut func).at_bottom(block0);
-            cur.ins().brnz(y_use2, block2, &[])
-        };
-        let jump_block0_block1: Inst = {
-            let mut cur = FuncCursor::new(&mut func).at_bottom(block0);
-            cur.ins().jump(block1, &[])
+            cur.ins().brif(y_use2, block2, &[], block1, &[])
         };
 
         assert_eq!(ssa.use_var(&mut func, x_var, I32, block0).0, x_ssa);
@@ -797,7 +726,7 @@ mod tests {
 
         // block1
         ssa.declare_block(block1);
-        ssa.declare_block_predecessor(block1, jump_block0_block1);
+        ssa.declare_block_predecessor(block1, brif_block0_block2_block1);
         ssa.seal_block(block1, &mut func);
 
         let x_use2 = ssa.use_var(&mut func, x_var, I32, block1).0;
@@ -818,7 +747,7 @@ mod tests {
 
         // block2
         ssa.declare_block(block2);
-        ssa.declare_block_predecessor(block2, brnz_block0_block2);
+        ssa.declare_block_predecessor(block2, brif_block0_block2_block1);
         ssa.declare_block_predecessor(block2, jump_block1_block2);
         ssa.seal_block(block2, &mut func);
         let x_use3 = ssa.use_var(&mut func, x_var, I32, block2).0;
@@ -831,24 +760,36 @@ mod tests {
 
         assert_eq!(x_ssa, x_use3);
         assert_eq!(y_ssa, y_use3);
-        match func.dfg.analyze_branch(brnz_block0_block2) {
-            BranchInfo::SingleDest(dest, jump_args) => {
-                assert_eq!(dest, block2);
-                assert_eq!(jump_args.len(), 0);
+        match func.dfg.insts[brif_block0_block2_block1] {
+            ir::InstructionData::Brif {
+                blocks: [block_then, block_else],
+                ..
+            } => {
+                assert_eq!(block_then.block(&func.dfg.value_lists), block2);
+                assert_eq!(block_then.args_slice(&func.dfg.value_lists).len(), 0);
+                assert_eq!(block_else.block(&func.dfg.value_lists), block1);
+                assert_eq!(block_else.args_slice(&func.dfg.value_lists).len(), 0);
             }
             _ => assert!(false),
         };
-        match func.dfg.analyze_branch(jump_block0_block1) {
-            BranchInfo::SingleDest(dest, jump_args) => {
-                assert_eq!(dest, block1);
-                assert_eq!(jump_args.len(), 0);
+        match func.dfg.insts[brif_block0_block2_block1] {
+            ir::InstructionData::Brif {
+                blocks: [block_then, block_else],
+                ..
+            } => {
+                assert_eq!(block_then.block(&func.dfg.value_lists), block2);
+                assert_eq!(block_then.args_slice(&func.dfg.value_lists).len(), 0);
+                assert_eq!(block_else.block(&func.dfg.value_lists), block1);
+                assert_eq!(block_else.args_slice(&func.dfg.value_lists).len(), 0);
             }
             _ => assert!(false),
         };
-        match func.dfg.analyze_branch(jump_block1_block2) {
-            BranchInfo::SingleDest(dest, jump_args) => {
-                assert_eq!(dest, block2);
-                assert_eq!(jump_args.len(), 0);
+        match func.dfg.insts[jump_block1_block2] {
+            ir::InstructionData::Jump {
+                destination: dest, ..
+            } => {
+                assert_eq!(dest.block(&func.dfg.value_lists), block2);
+                assert_eq!(dest.args_slice(&func.dfg.value_lists).len(), 0);
             }
             _ => assert!(false),
         };
@@ -877,8 +818,7 @@ mod tests {
         //    jump block1
         // block1:
         //    z = z + y;
-        //    brnz y, block3;
-        //    jump block2;
+        //    brif y, block3, block2;
         // block2:
         //    z = z - x;
         //    return y
@@ -930,18 +870,14 @@ mod tests {
         ssa.def_var(z_var, z3, block1);
         let y4 = ssa.use_var(&mut func, y_var, I32, block1).0;
         assert_eq!(y4, y3);
-        let brnz_block1_block3 = {
+        let brif_block1_block3_block2 = {
             let mut cur = FuncCursor::new(&mut func).at_bottom(block1);
-            cur.ins().brnz(y4, block3, &[])
-        };
-        let jump_block1_block2 = {
-            let mut cur = FuncCursor::new(&mut func).at_bottom(block1);
-            cur.ins().jump(block2, &[])
+            cur.ins().brif(y4, block3, &[], block2, &[])
         };
 
         // block2
         ssa.declare_block(block2);
-        ssa.declare_block_predecessor(block2, jump_block1_block2);
+        ssa.declare_block_predecessor(block2, brif_block1_block3_block2);
         ssa.seal_block(block2, &mut func);
         let z4 = ssa.use_var(&mut func, z_var, I32, block2).0;
         assert_eq!(z4, z3);
@@ -960,7 +896,7 @@ mod tests {
 
         // block3
         ssa.declare_block(block3);
-        ssa.declare_block_predecessor(block3, brnz_block1_block3);
+        ssa.declare_block_predecessor(block3, brif_block1_block3_block2);
         ssa.seal_block(block3, &mut func);
         let y6 = ssa.use_var(&mut func, y_var, I32, block3).0;
         assert_eq!(y6, y3);
@@ -991,10 +927,9 @@ mod tests {
         // Here is the pseudo-program we want to translate:
         //
         // function %f {
-        // jt = jump_table [block2, block1]
         // block0:
         //    x = 1;
-        //    br_table x, block2, jt
+        //    br_table x, block2, [block2, block1]
         // block1:
         //    x = 2
         //    jump block2
@@ -1008,9 +943,6 @@ mod tests {
         let block0 = func.dfg.make_block();
         let block1 = func.dfg.make_block();
         let block2 = func.dfg.make_block();
-        let mut jump_table = JumpTableData::new();
-        jump_table.push_entry(block2);
-        jump_table.push_entry(block1);
         {
             let mut cur = FuncCursor::new(&mut func);
             cur.insert_block(block0);
@@ -1029,9 +961,16 @@ mod tests {
         ssa.def_var(x_var, x1, block0);
         ssa.use_var(&mut func, x_var, I32, block0).0;
         let br_table = {
+            let jump_table = JumpTableData::new(
+                func.dfg.block_call(block2, &[]),
+                &[
+                    func.dfg.block_call(block2, &[]),
+                    func.dfg.block_call(block1, &[]),
+                ],
+            );
             let jt = func.create_jump_table(jump_table);
             let mut cur = FuncCursor::new(&mut func).at_bottom(block0);
-            cur.ins().br_table(x1, block2, jt)
+            cur.ins().br_table(x1, jt)
         };
 
         // block1
@@ -1224,8 +1163,7 @@ mod tests {
         // block0:
         //    return;
         // block1:
-        //    brz x, block1;
-        //    jump block1;
+        //    brif x, block1, block1;
         let mut func = Function::new();
         let mut ssa = SSABuilder::default();
         let block0 = func.dfg.make_block();
@@ -1250,10 +1188,8 @@ mod tests {
             let mut cur = FuncCursor::new(&mut func).at_bottom(block1);
             let x_var = Variable::new(0);
             let x_val = ssa.use_var(&mut cur.func, x_var, I32, block1).0;
-            let brz = cur.ins().brz(x_val, block1, &[]);
-            let jump_block1_block1 = cur.ins().jump(block1, &[]);
-            ssa.declare_block_predecessor(block1, brz);
-            ssa.declare_block_predecessor(block1, jump_block1_block1);
+            let brif = cur.ins().brif(x_val, block1, &[], block1, &[]);
+            ssa.declare_block_predecessor(block1, brif);
         }
         ssa.seal_block(block1, &mut func);
 
@@ -1275,8 +1211,7 @@ mod tests {
         // block0:
         //    return;
         // block1:
-        //    brz x, block2;
-        //    jump block1;
+        //    brif x, block1, block2;
         // block2:
         //    jump block1;
         let mut func = Function::new();
@@ -1301,19 +1236,17 @@ mod tests {
 
         // block1
         ssa.declare_block(block1);
-        let brz = {
+        let brif = {
             let mut cur = FuncCursor::new(&mut func).at_bottom(block1);
             let x_var = Variable::new(0);
             let x_val = ssa.use_var(&mut cur.func, x_var, I32, block1).0;
-            let brz = cur.ins().brz(x_val, block2, &[]);
-            let jump_block1_block1 = cur.ins().jump(block1, &[]);
-            ssa.declare_block_predecessor(block1, jump_block1_block1);
-            brz
+            cur.ins().brif(x_val, block2, &[], block1, &[])
         };
 
         // block2
         ssa.declare_block(block2);
-        ssa.declare_block_predecessor(block2, brz);
+        ssa.declare_block_predecessor(block1, brif);
+        ssa.declare_block_predecessor(block2, brif);
         ssa.seal_block(block2, &mut func);
         let jump_block2_block1 = {
             let mut cur = FuncCursor::new(&mut func).at_bottom(block2);

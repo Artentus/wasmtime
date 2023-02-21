@@ -55,6 +55,35 @@
             (iconst ty (u64_from_imm64 k))))
       (subsume (iconst ty (imm64_masked ty (u64_not k)))))
 
+(rule (simplify (ishl (fits_in_64 ty)
+                      (iconst ty k1)
+                      (iconst _ k2)))
+      (subsume (iconst ty (imm64_shl ty k1 k2))))
+
+(rule (simplify (ushr (fits_in_64 ty)
+                      (iconst ty k1)
+                      (iconst _ k2)))
+      (subsume (iconst ty (imm64_ushr ty k1 k2))))
+
+(rule (simplify (sshr (fits_in_64 ty)
+                      (iconst ty k1)
+                      (iconst _ k2)))
+      (subsume (iconst ty (imm64_sshr ty k1 k2))))
+
+(rule (simplify (uextend (fits_in_64 wide) (iconst narrow imm)))
+      (subsume (iconst wide (imm64 (u64_uextend_imm64 narrow imm)))))
+
+(rule (simplify (sextend (fits_in_64 wide) (iconst narrow imm)))
+      (subsume (iconst wide (imm64_masked wide (i64_as_u64 (i64_sextend_imm64 narrow imm))))))
+
+(rule (simplify
+       (icmp result_ty
+            cc
+            (iconst ty k1)
+            (iconst ty k2)))
+      (subsume (iconst result_ty (imm64_icmp ty cc k1 k2))))
+
+
 ;; Canonicalize via commutativity: push immediates to the right.
 ;;
 ;;   (op k x) --> (op x k)
@@ -80,6 +109,10 @@
 (rule (simplify
        (bxor ty k @ (iconst ty _) x))
       (bxor ty x k))
+
+(rule (simplify
+       (icmp ty cc k @ (iconst _ _) x))
+      (icmp ty (intcc_reverse cc) x k))
 
 ;; Canonicalize via associativity: reassociate to a right-heavy tree
 ;; for constants.

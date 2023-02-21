@@ -56,7 +56,7 @@
 
 use crate::externref::VMExternRef;
 use crate::table::{Table, TableElementType};
-use crate::vmcontext::{VMCallerCheckedAnyfunc, VMContext};
+use crate::vmcontext::{VMCallerCheckedFuncRef, VMContext};
 use crate::TrapReason;
 use anyhow::Result;
 use std::mem;
@@ -122,6 +122,17 @@ pub mod trampolines {
                         Err(panic) => crate::traphandlers::resume_panic(panic),
                     }
                 }
+
+                // This works around a `rustc` bug where compiling with LTO
+                // will sometimes strip out some of these symbols resulting
+                // in a linking failure.
+                #[allow(non_upper_case_globals)]
+                #[used]
+                static [<impl_ $name _ref>]: unsafe extern "C" fn(
+                    *mut VMContext,
+                    $( $pname : libcall!(@ty $param), )*
+                ) $( -> libcall!(@ty $result))? = [<impl_ $name>];
+
             )*
         }};
 
@@ -198,14 +209,14 @@ unsafe fn table_grow(
     vmctx: *mut VMContext,
     table_index: u32,
     delta: u32,
-    // NB: we don't know whether this is a pointer to a `VMCallerCheckedAnyfunc`
+    // NB: we don't know whether this is a pointer to a `VMCallerCheckedFuncRef`
     // or is a `VMExternRef` until we look at the table type.
     init_value: *mut u8,
 ) -> Result<u32> {
     let instance = (*vmctx).instance_mut();
     let table_index = TableIndex::from_u32(table_index);
     let element = match instance.table_element_type(table_index) {
-        TableElementType::Func => (init_value as *mut VMCallerCheckedAnyfunc).into(),
+        TableElementType::Func => (init_value as *mut VMCallerCheckedFuncRef).into(),
         TableElementType::Extern => {
             let init_value = if init_value.is_null() {
                 None
@@ -230,7 +241,7 @@ unsafe fn table_fill(
     table_index: u32,
     dst: u32,
     // NB: we don't know whether this is a `VMExternRef` or a pointer to a
-    // `VMCallerCheckedAnyfunc` until we look at the table's element type.
+    // `VMCallerCheckedFuncRef` until we look at the table's element type.
     val: *mut u8,
     len: u32,
 ) -> Result<(), Trap> {
@@ -239,7 +250,7 @@ unsafe fn table_fill(
     let table = &mut *instance.get_table(table_index);
     match table.element_type() {
         TableElementType::Func => {
-            let val = val as *mut VMCallerCheckedAnyfunc;
+            let val = val as *mut VMCallerCheckedFuncRef;
             table.fill(dst, val.into(), len)
         }
         TableElementType::Extern => {
@@ -491,4 +502,86 @@ unsafe fn out_of_gas(vmctx: *mut VMContext) -> Result<()> {
 // Hook for when an instance observes that the epoch has changed.
 unsafe fn new_epoch(vmctx: *mut VMContext) -> Result<u64> {
     (*(*vmctx).instance().store()).new_epoch()
+}
+
+/// This module contains functions which are used for resolving relocations at
+/// runtime if necessary.
+///
+/// These functions are not used by default and currently the only platform
+/// they're used for is on x86_64 when SIMD is disabled and then SSE features
+/// are further disabled. In these configurations Cranelift isn't allowed to use
+/// native CPU instructions so it falls back to libcalls and we rely on the Rust
+/// standard library generally for implementing these.
+#[allow(missing_docs)]
+pub mod relocs {
+    pub extern "C" fn floorf32(f: f32) -> f32 {
+        f.floor()
+    }
+
+    pub extern "C" fn floorf64(f: f64) -> f64 {
+        f.floor()
+    }
+
+    pub extern "C" fn ceilf32(f: f32) -> f32 {
+        f.ceil()
+    }
+
+    pub extern "C" fn ceilf64(f: f64) -> f64 {
+        f.ceil()
+    }
+
+    pub extern "C" fn truncf32(f: f32) -> f32 {
+        f.trunc()
+    }
+
+    pub extern "C" fn truncf64(f: f64) -> f64 {
+        f.trunc()
+    }
+
+    const TOINT_32: f32 = 1.0 / f32::EPSILON;
+    const TOINT_64: f64 = 1.0 / f64::EPSILON;
+
+    // NB: replace with `round_ties_even` from libstd when it's stable as
+    // tracked by rust-lang/rust#96710
+    pub extern "C" fn nearestf32(x: f32) -> f32 {
+        // Rust doesn't have a nearest function; there's nearbyint, but it's not
+        // stabilized, so do it manually.
+        // Nearest is either ceil or floor depending on which is nearest or even.
+        // This approach exploited round half to even default mode.
+        let i = x.to_bits();
+        let e = i >> 23 & 0xff;
+        if e >= 0x7f_u32 + 23 {
+            // Check for NaNs.
+            if e == 0xff {
+                // Read the 23-bits significand.
+                if i & 0x7fffff != 0 {
+                    // Ensure it's arithmetic by setting the significand's most
+                    // significant bit to 1; it also works for canonical NaNs.
+                    return f32::from_bits(i | (1 << 22));
+                }
+            }
+            x
+        } else {
+            (x.abs() + TOINT_32 - TOINT_32).copysign(x)
+        }
+    }
+
+    pub extern "C" fn nearestf64(x: f64) -> f64 {
+        let i = x.to_bits();
+        let e = i >> 52 & 0x7ff;
+        if e >= 0x3ff_u64 + 52 {
+            // Check for NaNs.
+            if e == 0x7ff {
+                // Read the 52-bits significand.
+                if i & 0xfffffffffffff != 0 {
+                    // Ensure it's arithmetic by setting the significand's most
+                    // significant bit to 1; it also works for canonical NaNs.
+                    return f64::from_bits(i | (1 << 51));
+                }
+            }
+            x
+        } else {
+            (x.abs() + TOINT_64 - TOINT_64).copysign(x)
+        }
+    }
 }

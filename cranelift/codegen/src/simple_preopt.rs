@@ -1,18 +1,16 @@
 //! A pre-legalization rewriting pass.
 //!
 //! This module provides early-stage optimizations. The optimizations found
-//! should be useful for already well-optimized code. More general purpose
-//! early-stage optimizations can be found in the preopt crate.
+//! should be useful for already well-optimized code.
 
 use crate::cursor::{Cursor, FuncCursor};
 use crate::divconst_magic_numbers::{magic_s32, magic_s64, magic_u32, magic_u64};
 use crate::divconst_magic_numbers::{MS32, MS64, MU32, MU64};
-use crate::flowgraph::ControlFlowGraph;
 use crate::ir::{
-    condcodes::{CondCode, IntCC},
+    condcodes::IntCC,
     instructions::Opcode,
     types::{I128, I32, I64},
-    Block, DataFlowGraph, Function, Inst, InstBuilder, InstructionData, Type, Value,
+    DataFlowGraph, Function, Inst, InstBuilder, InstructionData, Type, Value,
 };
 use crate::isa::TargetIsa;
 use crate::timing;
@@ -466,119 +464,12 @@ fn do_divrem_transformation(divrem_info: &DivRemByConstInfo, pos: &mut FuncCurso
     }
 }
 
-enum BranchOrderKind {
-    BrzToBrnz(Value),
-    BrnzToBrz(Value),
-}
-
-/// Reorder branches to encourage fallthroughs.
-///
-/// When a block ends with a conditional branch followed by an unconditional
-/// branch, this will reorder them if one of them is branching to the next Block
-/// layout-wise. The unconditional jump can then become a fallthrough.
-fn branch_order(pos: &mut FuncCursor, cfg: &mut ControlFlowGraph, block: Block, inst: Inst) {
-    let (term_inst, term_inst_args, term_dest, cond_inst, cond_inst_args, cond_dest, kind) =
-        match pos.func.dfg.insts[inst] {
-            InstructionData::Jump {
-                opcode: Opcode::Jump,
-                destination,
-                ref args,
-            } => {
-                let next_block = if let Some(next_block) = pos.func.layout.next_block(block) {
-                    next_block
-                } else {
-                    return;
-                };
-
-                if destination == next_block {
-                    return;
-                }
-
-                let prev_inst = if let Some(prev_inst) = pos.func.layout.prev_inst(inst) {
-                    prev_inst
-                } else {
-                    return;
-                };
-
-                let prev_inst_data = &pos.func.dfg.insts[prev_inst];
-
-                if let Some(prev_dest) = prev_inst_data.branch_destination() {
-                    if prev_dest != next_block {
-                        return;
-                    }
-                } else {
-                    return;
-                }
-
-                match prev_inst_data {
-                    InstructionData::Branch {
-                        opcode,
-                        args: ref prev_args,
-                        destination: cond_dest,
-                    } => {
-                        let cond_arg = {
-                            let args = pos.func.dfg.inst_args(prev_inst);
-                            args[0]
-                        };
-
-                        let kind = match opcode {
-                            Opcode::Brz => BranchOrderKind::BrzToBrnz(cond_arg),
-                            Opcode::Brnz => BranchOrderKind::BrnzToBrz(cond_arg),
-                            _ => panic!("unexpected opcode"),
-                        };
-
-                        (
-                            inst,
-                            args.clone(),
-                            destination,
-                            prev_inst,
-                            prev_args.clone(),
-                            *cond_dest,
-                            kind,
-                        )
-                    }
-                    _ => return,
-                }
-            }
-
-            _ => return,
-        };
-
-    let cond_args = cond_inst_args.as_slice(&pos.func.dfg.value_lists).to_vec();
-    let term_args = term_inst_args.as_slice(&pos.func.dfg.value_lists).to_vec();
-
-    match kind {
-        BranchOrderKind::BrnzToBrz(cond_arg) => {
-            pos.func
-                .dfg
-                .replace(term_inst)
-                .jump(cond_dest, &cond_args[1..]);
-            pos.func
-                .dfg
-                .replace(cond_inst)
-                .brz(cond_arg, term_dest, &term_args);
-        }
-        BranchOrderKind::BrzToBrnz(cond_arg) => {
-            pos.func
-                .dfg
-                .replace(term_inst)
-                .jump(cond_dest, &cond_args[1..]);
-            pos.func
-                .dfg
-                .replace(cond_inst)
-                .brnz(cond_arg, term_dest, &term_args);
-        }
-    }
-
-    cfg.recompute_block(pos.func, block);
-}
-
 mod simplify {
     use super::*;
     use crate::ir::{
         dfg::ValueDef,
         immediates,
-        instructions::{Opcode, ValueList},
+        instructions::Opcode,
         types::{I16, I32, I8},
     };
     use std::marker::PhantomData;
@@ -829,30 +720,17 @@ mod simplify {
         }
     }
 
-    struct BranchOptInfo {
-        br_inst: Inst,
-        cmp_arg: Value,
-        args: ValueList,
-        new_opcode: Opcode,
-    }
-
     /// Fold comparisons into branch operations when possible.
     ///
     /// This matches against operations which compare against zero, then use the
-    /// result in a `brz` or `brnz` branch. It folds those two operations into a
-    /// single `brz` or `brnz`.
+    /// result in a conditional branch.
     fn branch_opt(pos: &mut FuncCursor, inst: Inst) {
-        let mut info = if let InstructionData::Branch {
-            opcode: br_opcode,
-            args: ref br_args,
+        let (cmp_arg, new_then, new_else) = if let InstructionData::Brif {
+            arg: first_arg,
+            blocks: [block_then, block_else],
             ..
         } = pos.func.dfg.insts[inst]
         {
-            let first_arg = {
-                let args = pos.func.dfg.inst_args(inst);
-                args[0]
-            };
-
             let icmp_inst =
                 if let ValueDef::Result(icmp_inst, _) = pos.func.dfg.value_def(first_arg) {
                     icmp_inst
@@ -872,26 +750,13 @@ mod simplify {
                     return;
                 }
 
-                // icmp_imm returns non-zero when the comparison is true. So, if
-                // we're branching on zero, we need to invert the condition.
-                let cond = match br_opcode {
-                    Opcode::Brz => cmp_cond.inverse(),
-                    Opcode::Brnz => cmp_cond,
+                let (new_then, new_else) = match cmp_cond {
+                    IntCC::Equal => (block_else, block_then),
+                    IntCC::NotEqual => (block_then, block_else),
                     _ => return,
                 };
 
-                let new_opcode = match cond {
-                    IntCC::Equal => Opcode::Brz,
-                    IntCC::NotEqual => Opcode::Brnz,
-                    _ => return,
-                };
-
-                BranchOptInfo {
-                    br_inst: inst,
-                    cmp_arg,
-                    args: br_args.clone(),
-                    new_opcode,
-                }
+                (cmp_arg, new_then, new_else)
             } else {
                 return;
             }
@@ -899,24 +764,25 @@ mod simplify {
             return;
         };
 
-        info.args.as_mut_slice(&mut pos.func.dfg.value_lists)[0] = info.cmp_arg;
-        if let InstructionData::Branch { ref mut opcode, .. } = pos.func.dfg.insts[info.br_inst] {
-            *opcode = info.new_opcode;
+        if let InstructionData::Brif { arg, blocks, .. } = &mut pos.func.dfg.insts[inst] {
+            *arg = cmp_arg;
+            blocks[0] = new_then;
+            blocks[1] = new_else;
         } else {
-            panic!();
+            unreachable!();
         }
     }
 }
 
 /// The main pre-opt pass.
-pub fn do_preopt(func: &mut Function, cfg: &mut ControlFlowGraph, isa: &dyn TargetIsa) {
+pub fn do_preopt(func: &mut Function, isa: &dyn TargetIsa) {
     let _tt = timing::preopt();
 
     let mut pos = FuncCursor::new(func);
     let native_word_width = isa.pointer_bytes() as u32;
     let mut optimizer = simplify::peephole_optimizer(isa);
 
-    while let Some(block) = pos.next_block() {
+    while let Some(_) = pos.next_block() {
         while let Some(inst) = pos.next_inst() {
             simplify::apply_all(&mut optimizer, &mut pos, inst, native_word_width);
 
@@ -925,8 +791,6 @@ pub fn do_preopt(func: &mut Function, cfg: &mut ControlFlowGraph, isa: &dyn Targ
                 do_divrem_transformation(&divrem_info, &mut pos, inst);
                 continue;
             }
-
-            branch_order(&mut pos, cfg, block, inst);
         }
     }
 }

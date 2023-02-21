@@ -82,11 +82,6 @@ pub trait FuncWriter {
             }
         }
 
-        for (jt, jt_data) in &func.jump_tables {
-            any = true;
-            self.write_entity_definition(w, func, jt.into(), jt_data)?;
-        }
-
         for (&cref, cval) in func.dfg.constants.iter() {
             any = true;
             self.write_entity_definition(w, func, cref.into(), cval)?;
@@ -377,6 +372,7 @@ fn write_instruction(
 /// Write the operands of `inst` to `w` with a prepended space.
 pub fn write_operands(w: &mut dyn Write, dfg: &DataFlowGraph, inst: Inst) -> fmt::Result {
     let pool = &dfg.value_lists;
+    let jump_tables = &dfg.jump_tables;
     use crate::ir::instructions::InstructionData::*;
     match dfg.insts[inst] {
         AtomicRmw { op, args, .. } => write!(w, " {} {}, {}", op, args[0], args[1]),
@@ -414,29 +410,20 @@ pub fn write_operands(w: &mut dyn Write, dfg: &DataFlowGraph, inst: Inst) -> fmt
         IntCompareImm { cond, arg, imm, .. } => write!(w, " {} {}, {}", cond, arg, imm),
         IntAddTrap { args, code, .. } => write!(w, " {}, {}, {}", args[0], args[1], code),
         FloatCompare { cond, args, .. } => write!(w, " {} {}, {}", cond, args[0], args[1]),
-        Jump {
-            destination,
-            ref args,
-            ..
-        } => {
-            write!(w, " {}", destination)?;
-            write_block_args(w, args.as_slice(pool))
+        Jump { destination, .. } => {
+            write!(w, " {}", destination.display(pool))
         }
-        Branch {
-            destination,
-            ref args,
-            ..
-        } => {
-            let args = args.as_slice(pool);
-            write!(w, " {}, {}", args[0], destination)?;
-            write_block_args(w, &args[1..])
-        }
-        BranchTable {
+        Brif {
             arg,
-            destination,
-            table,
+            blocks: [block_then, block_else],
             ..
-        } => write!(w, " {}, {}, {}", arg, destination, table),
+        } => {
+            write!(w, " {}, {}", arg, block_then.display(pool))?;
+            write!(w, ", {}", block_else.display(pool))
+        }
+        BranchTable { arg, table, .. } => {
+            write!(w, " {}, {}", arg, jump_tables[table].display(pool))
+        }
         Call {
             func_ref, ref args, ..
         } => write!(w, " {}({})", func_ref, DisplayValues(args.as_slice(pool))),
@@ -485,7 +472,7 @@ pub fn write_operands(w: &mut dyn Write, dfg: &DataFlowGraph, inst: Inst) -> fmt
     }?;
 
     let mut sep = "  ; ";
-    for &arg in dfg.inst_args(inst) {
+    for arg in dfg.inst_values(inst) {
         if let ValueDef::Result(src, _) = dfg.value_def(arg) {
             let imm = match dfg.insts[src] {
                 UnaryImm { imm, .. } => imm.to_string(),
@@ -503,15 +490,6 @@ pub fn write_operands(w: &mut dyn Write, dfg: &DataFlowGraph, inst: Inst) -> fmt
     Ok(())
 }
 
-/// Write block args using optional parantheses.
-fn write_block_args(w: &mut dyn Write, args: &[Value]) -> fmt::Result {
-    if args.is_empty() {
-        Ok(())
-    } else {
-        write!(w, "({})", DisplayValues(args))
-    }
-}
-
 /// Displayable slice of values.
 struct DisplayValues<'a>(&'a [Value]);
 
@@ -522,21 +500,6 @@ impl<'a> fmt::Display for DisplayValues<'a> {
                 write!(f, "{}", val)?;
             } else {
                 write!(f, ", {}", val)?;
-            }
-        }
-        Ok(())
-    }
-}
-
-struct DisplayValuesWithDelimiter<'a>(&'a [Value], char);
-
-impl<'a> fmt::Display for DisplayValuesWithDelimiter<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for (i, val) in self.0.iter().enumerate() {
-            if i == 0 {
-                write!(f, "{}", val)?;
-            } else {
-                write!(f, "{}{}", self.1, val)?;
             }
         }
         Ok(())

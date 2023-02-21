@@ -10,8 +10,8 @@ use crate::fx::{FxHashMap, FxHashSet};
 use crate::inst_predicates::{has_lowering_side_effect, is_constant_64bit};
 use crate::ir::{
     ArgumentPurpose, Block, Constant, ConstantData, DataFlowGraph, ExternalName, Function,
-    GlobalValue, GlobalValueData, Immediate, Inst, InstructionData, MemFlags, Opcode, RelSourceLoc,
-    Type, Value, ValueDef, ValueLabelAssignments, ValueLabelStart,
+    GlobalValue, GlobalValueData, Immediate, Inst, InstructionData, MemFlags, RelSourceLoc, Type,
+    Value, ValueDef, ValueLabelAssignments, ValueLabelStart,
 };
 use crate::machinst::{
     writable_value_regs, BlockIndex, BlockLoweringOrder, Callee, LoweredBlock, MachLabel, Reg,
@@ -465,56 +465,25 @@ impl<'func, I: VCodeInst> Lower<'func, I> {
         // Once, Multiple} is part of what makes this pass more
         // efficient than a full indirect-use-counting pass.
 
-        let mut value_ir_uses: SecondaryMap<Value, ValueUseState> =
-            SecondaryMap::with_default(ValueUseState::Unused);
+        let mut value_ir_uses = SecondaryMap::with_default(ValueUseState::Unused);
 
         // Stack of iterators over Values as we do DFS to mark
-        // Multiple-state subtrees.
-        type StackVec<'a> = SmallVec<[std::slice::Iter<'a, Value>; 16]>;
-        let mut stack: StackVec = smallvec![];
+        // Multiple-state subtrees. The iterator type is whatever is
+        // returned by `uses` below.
+        let mut stack: SmallVec<[_; 16]> = smallvec![];
 
-        // Push args for a given inst onto the DFS stack.
-        let push_args_on_stack = |stack: &mut StackVec<'a>, value| {
+        // Find the args for the inst corresponding to the given value.
+        let uses = |value| {
             trace!(" -> pushing args for {} onto stack", value);
             if let ValueDef::Result(src_inst, _) = f.dfg.value_def(value) {
-                stack.push(f.dfg.inst_args(src_inst).iter());
+                Some(f.dfg.inst_values(src_inst))
+            } else {
+                None
             }
         };
 
         // Do a DFS through `value_ir_uses` to mark a subtree as
         // Multiple.
-        let mark_all_uses_as_multiple =
-            |value_ir_uses: &mut SecondaryMap<Value, ValueUseState>, stack: &mut StackVec<'a>| {
-                while let Some(iter) = stack.last_mut() {
-                    if let Some(&value) = iter.next() {
-                        let value = f.dfg.resolve_aliases(value);
-                        trace!(" -> DFS reaches {}", value);
-                        if value_ir_uses[value] == ValueUseState::Multiple {
-                            // Truncate DFS here: no need to go further,
-                            // as whole subtree must already be Multiple.
-                            #[cfg(debug_assertions)]
-                            {
-                                // With debug asserts, check one level
-                                // of that invariant at least.
-                                if let ValueDef::Result(src_inst, _) = f.dfg.value_def(value) {
-                                    debug_assert!(f.dfg.inst_args(src_inst).iter().all(|&arg| {
-                                        let arg = f.dfg.resolve_aliases(arg);
-                                        value_ir_uses[arg] == ValueUseState::Multiple
-                                    }));
-                                }
-                            }
-                            continue;
-                        }
-                        value_ir_uses[value] = ValueUseState::Multiple;
-                        trace!(" -> became Multiple");
-                        push_args_on_stack(stack, value);
-                    } else {
-                        // Empty iterator, discard.
-                        stack.pop();
-                    }
-                }
-            };
-
         for inst in f
             .layout
             .blocks()
@@ -525,9 +494,9 @@ impl<'func, I: VCodeInst> Lower<'func, I> {
             // could come in as Once on our two different results.
             let force_multiple = f.dfg.inst_results(inst).len() > 1;
 
-            // Iterate over all args of all instructions, noting an
-            // additional use on each operand. If an operand becomes Multiple,
-            for &arg in f.dfg.inst_args(inst) {
+            // Iterate over all values used by all instructions, noting an
+            // additional use on each operand.
+            for arg in f.dfg.inst_values(inst) {
                 let arg = f.dfg.resolve_aliases(arg);
                 let old = value_ir_uses[arg];
                 if force_multiple {
@@ -540,11 +509,39 @@ impl<'func, I: VCodeInst> Lower<'func, I> {
                     value_ir_uses[arg].inc();
                 }
                 let new = value_ir_uses[arg];
-                trace!("arg {} used, old state {:?}, new {:?}", arg, old, new,);
+                trace!("arg {} used, old state {:?}, new {:?}", arg, old, new);
+
                 // On transition to Multiple, do DFS.
-                if old != ValueUseState::Multiple && new == ValueUseState::Multiple {
-                    push_args_on_stack(&mut stack, arg);
-                    mark_all_uses_as_multiple(&mut value_ir_uses, &mut stack);
+                if old == ValueUseState::Multiple || new != ValueUseState::Multiple {
+                    continue;
+                }
+                if let Some(iter) = uses(arg) {
+                    stack.push(iter);
+                }
+                while let Some(iter) = stack.last_mut() {
+                    if let Some(value) = iter.next() {
+                        let value = f.dfg.resolve_aliases(value);
+                        trace!(" -> DFS reaches {}", value);
+                        if value_ir_uses[value] == ValueUseState::Multiple {
+                            // Truncate DFS here: no need to go further,
+                            // as whole subtree must already be Multiple.
+                            // With debug asserts, check one level of
+                            // that invariant at least.
+                            debug_assert!(uses(value).into_iter().flatten().all(|arg| {
+                                let arg = f.dfg.resolve_aliases(arg);
+                                value_ir_uses[arg] == ValueUseState::Multiple
+                            }));
+                            continue;
+                        }
+                        value_ir_uses[value] = ValueUseState::Multiple;
+                        trace!(" -> became Multiple");
+                        if let Some(iter) = uses(value) {
+                            stack.push(iter);
+                        }
+                    } else {
+                        // Empty iterator, discard.
+                        stack.pop();
+                    }
                 }
             }
         }
@@ -901,39 +898,29 @@ impl<'func, I: VCodeInst> Lower<'func, I> {
         bindex: BlockIndex,
         // Original CLIF block:
         block: Block,
-        branches: &SmallVec<[Inst; 2]>,
-        targets: &SmallVec<[MachLabel; 2]>,
+        branch: Inst,
+        targets: &[MachLabel],
     ) -> CodegenResult<()> {
         trace!(
-            "lower_clif_branches: block {} branches {:?} targets {:?}",
+            "lower_clif_branches: block {} branch {:?} targets {:?}",
             block,
-            branches,
+            branch,
             targets,
         );
-        // A block should end with at most two branches. The first may be a
-        // conditional branch; a conditional branch can be followed only by an
-        // unconditional branch or fallthrough. Otherwise, if only one branch,
-        // it may be an unconditional branch, a fallthrough, a return, or a
-        // trap. These conditions are verified by `is_ebb_basic()` during the
-        // verifier pass.
-        assert!(branches.len() <= 2);
-        if branches.len() == 2 {
-            assert!(self.data(branches[1]).opcode() == Opcode::Jump);
-        }
         // When considering code-motion opportunities, consider the current
-        // program point to be the first branch.
-        self.cur_inst = Some(branches[0]);
-        // Lower the first branch in ISLE.  This will automatically handle
-        // the second branch (if any) by emitting a two-way conditional branch.
+        // program point to be this branch.
+        self.cur_inst = Some(branch);
+
+        // Lower the branch in ISLE.
         backend
-            .lower_branch(self, branches[0], targets)
+            .lower_branch(self, branch, targets)
             .unwrap_or_else(|| {
                 panic!(
                     "should be implemented in ISLE: branch = `{}`",
-                    self.f.dfg.display_inst(branches[0]),
+                    self.f.dfg.display_inst(branch),
                 )
             });
-        let loc = self.srcloc(branches[0]);
+        let loc = self.srcloc(branch);
         self.finish_ir_inst(loc);
         // Add block param outputs for current block.
         self.lower_branch_blockparam_args(bindex);
@@ -944,8 +931,14 @@ impl<'func, I: VCodeInst> Lower<'func, I> {
         for succ_idx in 0..self.vcode.block_order().succ_indices(block).len() {
             // Avoid immutable borrow by explicitly indexing.
             let (inst, succ) = self.vcode.block_order().succ_indices(block)[succ_idx];
-            // Get branch args and convert to Regs.
-            let branch_args = self.f.dfg.inst_variable_args(inst);
+
+            // The use of `succ_idx` to index `branch_destination` is valid on the assumption that
+            // the traversal order defined in `visit_block_succs` mirrors the order returned by
+            // `branch_destination`. If that assumption is violated, the branch targets returned
+            // here will not match the clif.
+            let branches = self.f.dfg.insts[inst].branch_destination(&self.f.dfg.jump_tables);
+            let branch_args = branches[succ_idx].args_slice(&self.f.dfg.value_lists);
+
             let mut branch_arg_vregs: SmallVec<[Reg; 16]> = smallvec![];
             for &arg in branch_args {
                 let arg = self.f.dfg.resolve_aliases(arg);
@@ -964,23 +957,20 @@ impl<'func, I: VCodeInst> Lower<'func, I> {
         &self,
         bindex: BlockIndex,
         _bb: Block,
-        branches: &mut SmallVec<[Inst; 2]>,
         targets: &mut SmallVec<[MachLabel; 2]>,
-    ) {
-        branches.clear();
+    ) -> Option<Inst> {
         targets.clear();
         let mut last_inst = None;
         for &(inst, succ) in self.vcode.block_order().succ_indices(bindex) {
-            // Avoid duplicates: this ensures a br_table is only inserted once.
-            if last_inst != Some(inst) {
-                branches.push(inst);
-            } else {
-                debug_assert!(self.f.dfg.insts[inst].opcode() == Opcode::BrTable);
-                debug_assert!(branches.len() == 1);
-            }
+            // Basic blocks may end in a single branch instruction, but those instructions may have
+            // multiple destinations. As such, all `inst` values in `succ_indices` must be the
+            // same, or this basic block would have multiple branch instructions present.
+            debug_assert!(last_inst.map_or(true, |prev| prev == inst));
             last_inst = Some(inst);
             targets.push(MachLabel::from_block(succ));
         }
+
+        last_inst
     }
 
     /// Lower the function.
@@ -1004,7 +994,6 @@ impl<'func, I: VCodeInst> Lower<'func, I> {
         self.vcode.set_entry(BlockIndex::new(0));
 
         // Reused vectors for branch lowering.
-        let mut branches: SmallVec<[Inst; 2]> = SmallVec::new();
         let mut targets: SmallVec<[MachLabel; 2]> = SmallVec::new();
 
         // get a copy of the lowered order; we hold this separately because we
@@ -1026,10 +1015,9 @@ impl<'func, I: VCodeInst> Lower<'func, I> {
 
             // End branches.
             if let Some(bb) = lb.orig_block() {
-                self.collect_branches_and_targets(bindex, bb, &mut branches, &mut targets);
-                if branches.len() > 0 {
-                    self.lower_clif_branches(backend, bindex, bb, &branches, &targets)?;
-                    self.finish_ir_inst(self.srcloc(branches[0]));
+                if let Some(branch) = self.collect_branches_and_targets(bindex, bb, &mut targets) {
+                    self.lower_clif_branches(backend, bindex, bb, branch, &targets)?;
+                    self.finish_ir_inst(self.srcloc(branch));
                 }
             } else {
                 // If no orig block, this must be a pure edge block;
@@ -1145,7 +1133,8 @@ impl<'func, I: VCodeInst> Lower<'func, I> {
         self.f.rel_srclocs()[ir_inst]
     }
 
-    /// Get the number of inputs to the given IR instruction.
+    /// Get the number of inputs to the given IR instruction. This is a count only of the Value
+    /// arguments to the instruction: block arguments will not be included in this count.
     pub fn num_inputs(&self, ir_inst: Inst) -> usize {
         self.f.dfg.inst_args(ir_inst).len()
     }

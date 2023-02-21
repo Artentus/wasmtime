@@ -81,8 +81,52 @@ macro_rules! isle_common_prelude_methods {
         }
 
         #[inline]
+        fn imm64_shl(&mut self, ty: Type, x: Imm64, y: Imm64) -> Imm64 {
+            // Mask off any excess shift bits.
+            let shift_mask = (ty.bits() - 1) as u64;
+            let y = (y.bits() as u64) & shift_mask;
+
+            // Mask the result to `ty` bits.
+            let ty_mask = self.ty_mask(ty) as i64;
+            Imm64::new((x.bits() << y) & ty_mask)
+        }
+
+        #[inline]
+        fn imm64_ushr(&mut self, ty: Type, x: Imm64, y: Imm64) -> Imm64 {
+            let ty_mask = self.ty_mask(ty);
+            let x = (x.bits() as u64) & ty_mask;
+
+            // Mask off any excess shift bits.
+            let shift_mask = (ty.bits() - 1) as u64;
+            let y = (y.bits() as u64) & shift_mask;
+
+            // NB: No need to mask off high bits because they are already zero.
+            Imm64::new((x >> y) as i64)
+        }
+
+        #[inline]
+        fn imm64_sshr(&mut self, ty: Type, x: Imm64, y: Imm64) -> Imm64 {
+            // Sign extend `x` from `ty.bits()`-width to the full 64 bits.
+            let shift = u32::checked_sub(64, ty.bits()).unwrap_or(0);
+            let x = (x.bits() << shift) >> shift;
+
+            // Mask off any excess shift bits.
+            let shift_mask = (ty.bits() - 1) as i64;
+            let y = y.bits() & shift_mask;
+
+            // Mask off sign bits that aren't part of `ty`.
+            let ty_mask = self.ty_mask(ty) as i64;
+            Imm64::new((x >> y) & ty_mask)
+        }
+
+        #[inline]
         fn u64_not(&mut self, x: u64) -> u64 {
             !x
+        }
+
+        #[inline]
+        fn u64_eq(&mut self, x: u64, y: u64) -> bool {
+            x == y
         }
 
         #[inline]
@@ -96,13 +140,35 @@ macro_rules! isle_common_prelude_methods {
         }
 
         #[inline]
-        fn u64_sextend_u32(&mut self, x: u64) -> u64 {
-            x as u32 as i32 as i64 as u64
+        fn i64_sextend_imm64(&mut self, ty: Type, mut x: Imm64) -> i64 {
+            x.sign_extend_from_width(ty.bits());
+            x.bits()
         }
 
         #[inline]
-        fn u64_uextend_u32(&mut self, x: u64) -> u64 {
-            x & 0xffff_ffff
+        fn u64_uextend_imm64(&mut self, ty: Type, x: Imm64) -> u64 {
+            (x.bits() as u64) & self.ty_mask(ty)
+        }
+
+        #[inline]
+        fn imm64_icmp(&mut self, ty: Type, cc: &IntCC, x: Imm64, y: Imm64) -> Imm64 {
+            let ux = self.u64_uextend_imm64(ty, x);
+            let uy = self.u64_uextend_imm64(ty, y);
+            let sx = self.i64_sextend_imm64(ty, x);
+            let sy = self.i64_sextend_imm64(ty, y);
+            let result = match cc {
+                IntCC::Equal => ux == uy,
+                IntCC::NotEqual => ux != uy,
+                IntCC::UnsignedGreaterThanOrEqual => ux >= uy,
+                IntCC::UnsignedGreaterThan => ux > uy,
+                IntCC::UnsignedLessThanOrEqual => ux <= uy,
+                IntCC::UnsignedLessThan => ux < uy,
+                IntCC::SignedGreaterThanOrEqual => sx >= sy,
+                IntCC::SignedGreaterThan => sx > sy,
+                IntCC::SignedLessThanOrEqual => sx <= sy,
+                IntCC::SignedLessThan => sx < sy,
+            };
+            Imm64::new(result.into())
         }
 
         #[inline]
@@ -128,14 +194,12 @@ macro_rules! isle_common_prelude_methods {
 
         #[inline]
         fn ty_mask(&mut self, ty: Type) -> u64 {
-            match ty.bits() {
-                1 => 1,
-                8 => 0xff,
-                16 => 0xffff,
-                32 => 0xffff_ffff,
-                64 => 0xffff_ffff_ffff_ffff,
-                _ => unimplemented!(),
-            }
+            let ty_bits = ty.bits();
+            debug_assert_ne!(ty_bits, 0);
+            let shift = 64_u64
+                .checked_sub(ty_bits.into())
+                .expect("unimplemented for > 64 bits");
+            u64::MAX >> shift
         }
 
         fn fits_in_16(&mut self, ty: Type) -> Option<Type> {
@@ -344,6 +408,17 @@ macro_rules! isle_common_prelude_methods {
         }
 
         #[inline]
+        fn imm64_power_of_two(&mut self, x: Imm64) -> Option<u64> {
+            let x = i64::from(x);
+            let x = u64::try_from(x).ok()?;
+            if x.is_power_of_two() {
+                Some(x.trailing_zeros().into())
+            } else {
+                None
+            }
+        }
+
+        #[inline]
         fn u64_from_bool(&mut self, b: bool) -> u64 {
             if b {
                 u64::MAX
@@ -511,12 +586,7 @@ macro_rules! isle_common_prelude_methods {
 
         #[inline]
         fn imm64_masked(&mut self, ty: Type, x: u64) -> Imm64 {
-            debug_assert!(ty.bits() <= 64);
-            // Careful: we can't do `(1 << bits) - 1` because that
-            // would overflow for `bits == 64`. Instead,
-            // right-shift an all-ones mask.
-            let mask = u64::MAX >> (64 - ty.bits());
-            Imm64::new((x & mask) as i64)
+            Imm64::new((x & self.ty_mask(ty)) as i64)
         }
 
         #[inline]
@@ -616,6 +686,18 @@ macro_rules! isle_common_prelude_methods {
             cc.inverse()
         }
 
+        fn floatcc_unordered(&mut self, cc: &FloatCC) -> bool {
+            match *cc {
+                FloatCC::Unordered
+                | FloatCC::UnorderedOrEqual
+                | FloatCC::UnorderedOrLessThan
+                | FloatCC::UnorderedOrLessThanOrEqual
+                | FloatCC::UnorderedOrGreaterThan
+                | FloatCC::UnorderedOrGreaterThanOrEqual => true,
+                _ => false,
+            }
+        }
+
         #[inline]
         fn unpack_value_array_2(&mut self, arr: &ValueArray2) -> (Value, Value) {
             let [a, b] = *arr;
@@ -636,6 +718,17 @@ macro_rules! isle_common_prelude_methods {
         #[inline]
         fn pack_value_array_3(&mut self, a: Value, b: Value, c: Value) -> ValueArray3 {
             [a, b, c]
+        }
+
+        #[inline]
+        fn unpack_block_array_2(&mut self, arr: &BlockArray2) -> (BlockCall, BlockCall) {
+            let [a, b] = *arr;
+            (a, b)
+        }
+
+        #[inline]
+        fn pack_block_array_2(&mut self, a: BlockCall, b: BlockCall) -> BlockArray2 {
+            [a, b]
         }
     };
 }

@@ -18,8 +18,8 @@ use cranelift_codegen::ir::{self, UserExternalNameRef};
 use cranelift_codegen::ir::{
     AbiParam, ArgumentExtension, ArgumentPurpose, Block, Constant, ConstantData, DynamicStackSlot,
     DynamicStackSlotData, DynamicTypeData, ExtFuncData, ExternalName, FuncRef, Function,
-    GlobalValue, GlobalValueData, JumpTable, JumpTableData, MemFlags, Opcode, SigRef, Signature,
-    StackSlot, StackSlotData, StackSlotKind, Table, TableData, Type, UserFuncName, Value,
+    GlobalValue, GlobalValueData, JumpTableData, MemFlags, Opcode, SigRef, Signature, StackSlot,
+    StackSlotData, StackSlotKind, Table, TableData, Type, UserFuncName, Value,
 };
 use cranelift_codegen::isa::{self, CallConv};
 use cranelift_codegen::packed_option::ReservedValue;
@@ -97,6 +97,8 @@ pub struct ParseOptions<'a> {
     pub default_calling_convention: CallConv,
     /// Default for unwind-info setting (enabled or disabled).
     pub unwind_info: bool,
+    /// Default for machine_code_cfg_info setting (enabled or disabled).
+    pub machine_code_cfg_info: bool,
 }
 
 impl Default for ParseOptions<'_> {
@@ -106,6 +108,7 @@ impl Default for ParseOptions<'_> {
             target: None,
             default_calling_convention: CallConv::Fast,
             unwind_info: false,
+            machine_code_cfg_info: false,
         }
     }
 }
@@ -390,25 +393,6 @@ impl Context {
         }
     }
 
-    // Allocate a new jump table.
-    fn add_jt(&mut self, jt: JumpTable, data: JumpTableData, loc: Location) -> ParseResult<()> {
-        self.map.def_jt(jt, loc)?;
-        while self.function.jump_tables.next_key().index() <= jt.index() {
-            self.function.create_jump_table(JumpTableData::new());
-        }
-        self.function.jump_tables[jt] = data;
-        Ok(())
-    }
-
-    // Resolve a reference to a jump table.
-    fn check_jt(&self, jt: JumpTable, loc: Location) -> ParseResult<()> {
-        if !self.map.contains_jt(jt) {
-            err!(loc, "undefined jump table {}", jt)
-        } else {
-            Ok(())
-        }
-    }
-
     // Allocate a new constant.
     fn add_constant(
         &mut self,
@@ -668,17 +652,6 @@ impl<'a> Parser<'a> {
             }
         }
         err!(self.loc, err_msg)
-    }
-
-    // Match and consume a jump table reference.
-    fn match_jt(&mut self) -> ParseResult<JumpTable> {
-        if let Some(Token::JumpTable(jt)) = self.token() {
-            self.consume();
-            if let Some(jt) = JumpTable::with_number(jt) {
-                return Ok(jt);
-            }
-        }
-        err!(self.loc, "expected jump table number: jt«n»")
     }
 
     // Match and consume a constant reference.
@@ -1076,9 +1049,24 @@ impl<'a> Parser<'a> {
         let mut targets = Vec::new();
         let mut flag_builder = settings::builder();
 
-        let unwind_info = if options.unwind_info { "true" } else { "false" };
+        let bool_to_str = |val: bool| {
+            if val {
+                "true"
+            } else {
+                "false"
+            }
+        };
+
+        // default to enabling cfg info
         flag_builder
-            .set("unwind_info", unwind_info)
+            .set(
+                "machine_code_cfg_info",
+                bool_to_str(options.machine_code_cfg_info),
+            )
+            .expect("machine_code_cfg_info option should be present");
+
+        flag_builder
+            .set("unwind_info", bool_to_str(options.unwind_info))
             .expect("unwind_info option should be present");
 
         while let Some(Token::Identifier(command)) = self.token() {
@@ -1484,11 +1472,6 @@ impl<'a> Parser<'a> {
                     self.parse_function_decl(ctx)
                         .and_then(|(fn_, dat)| ctx.add_fn(fn_, dat, self.loc))
                 }
-                Some(Token::JumpTable(..)) => {
-                    self.start_gathering_comments();
-                    self.parse_jump_table_decl()
-                        .and_then(|(jt, dat)| ctx.add_jt(jt, dat, self.loc))
-                }
                 Some(Token::Constant(..)) => {
                     self.start_gathering_comments();
                     self.parse_constant_decl()
@@ -1798,22 +1781,24 @@ impl<'a> Parser<'a> {
         Ok((fn_, data))
     }
 
-    // Parse a jump table decl.
+    // Parse a jump table literal.
     //
-    // jump-table-decl ::= * JumpTable(jt) "=" "jump_table" "[" jt-entry {"," jt-entry} "]"
-    fn parse_jump_table_decl(&mut self) -> ParseResult<(JumpTable, JumpTableData)> {
-        let jt = self.match_jt()?;
-        self.match_token(Token::Equal, "expected '=' in jump_table decl")?;
-        self.match_identifier("jump_table", "expected 'jump_table'")?;
+    // jump-table-lit ::= "[" block(args) {"," block(args) } "]"
+    //                  | "[]"
+    fn parse_jump_table(
+        &mut self,
+        ctx: &mut Context,
+        def: ir::BlockCall,
+    ) -> ParseResult<ir::JumpTable> {
         self.match_token(Token::LBracket, "expected '[' before jump table contents")?;
 
-        let mut data = JumpTableData::new();
+        let mut data = Vec::new();
 
-        // jump-table-decl ::= JumpTable(jt) "=" "jump_table" "[" * Block(dest) {"," Block(dest)} "]"
         match self.token() {
             Some(Token::Block(dest)) => {
                 self.consume();
-                data.push_entry(dest);
+                let args = self.parse_opt_value_list()?;
+                data.push(ctx.function.dfg.block_call(dest, &args));
 
                 loop {
                     match self.token() {
@@ -1821,7 +1806,8 @@ impl<'a> Parser<'a> {
                             self.consume();
                             if let Some(Token::Block(dest)) = self.token() {
                                 self.consume();
-                                data.push_entry(dest);
+                                let args = self.parse_opt_value_list()?;
+                                data.push(ctx.function.dfg.block_call(dest, &args));
                             } else {
                                 return err!(self.loc, "expected jump_table entry");
                             }
@@ -1837,11 +1823,11 @@ impl<'a> Parser<'a> {
 
         self.consume();
 
-        // Collect any trailing comments.
-        self.token();
-        self.claim_gathered_comments(jt);
-
-        Ok((jt, data))
+        Ok(ctx
+            .function
+            .dfg
+            .jump_tables
+            .push(JumpTableData::new(def, &data)))
     }
 
     // Parse a constant decl.
@@ -1899,8 +1885,8 @@ impl<'a> Parser<'a> {
         // all references refer to a definition.
         for block in &ctx.function.layout {
             for inst in ctx.function.layout.block_insts(block) {
-                for value in ctx.function.dfg.inst_args(inst) {
-                    if !ctx.map.contains_value(*value) {
+                for value in ctx.function.dfg.inst_values(inst) {
+                    if !ctx.map.contains_value(value) {
                         return err!(
                             ctx.map.location(AnyEntity::Inst(inst)).unwrap(),
                             "undefined operand value {}",
@@ -2582,36 +2568,41 @@ impl<'a> Parser<'a> {
                 // Parse the destination block number.
                 let block_num = self.match_block("expected jump destination block")?;
                 let args = self.parse_opt_value_list()?;
+                let destination = ctx.function.dfg.block_call(block_num, &args);
                 InstructionData::Jump {
                     opcode,
-                    destination: block_num,
-                    args: args.into_value_list(&[], &mut ctx.function.dfg.value_lists),
+                    destination,
                 }
             }
-            InstructionFormat::Branch => {
-                let ctrl_arg = self.match_value("expected SSA value control operand")?;
+            InstructionFormat::Brif => {
+                let arg = self.match_value("expected SSA value control operand")?;
                 self.match_token(Token::Comma, "expected ',' between operands")?;
-                let block_num = self.match_block("expected branch destination block")?;
-                let args = self.parse_opt_value_list()?;
-                InstructionData::Branch {
+                let block_then = {
+                    let block_num = self.match_block("expected branch then block")?;
+                    let args = self.parse_opt_value_list()?;
+                    ctx.function.dfg.block_call(block_num, &args)
+                };
+                self.match_token(Token::Comma, "expected ',' between operands")?;
+                let block_else = {
+                    let block_num = self.match_block("expected branch else block")?;
+                    let args = self.parse_opt_value_list()?;
+                    ctx.function.dfg.block_call(block_num, &args)
+                };
+                InstructionData::Brif {
                     opcode,
-                    destination: block_num,
-                    args: args.into_value_list(&[ctrl_arg], &mut ctx.function.dfg.value_lists),
+                    arg,
+                    blocks: [block_then, block_else],
                 }
             }
             InstructionFormat::BranchTable => {
                 let arg = self.match_value("expected SSA value operand")?;
                 self.match_token(Token::Comma, "expected ',' between operands")?;
                 let block_num = self.match_block("expected branch destination block")?;
+                let args = self.parse_opt_value_list()?;
+                let destination = ctx.function.dfg.block_call(block_num, &args);
                 self.match_token(Token::Comma, "expected ',' between operands")?;
-                let table = self.match_jt()?;
-                ctx.check_jt(table, self.loc)?;
-                InstructionData::BranchTable {
-                    opcode,
-                    arg,
-                    destination: block_num,
-                    table,
-                }
+                let table = self.parse_jump_table(ctx, destination)?;
+                InstructionData::BranchTable { opcode, arg, table }
             }
             InstructionFormat::TernaryImm8 => {
                 let lhs = self.match_value("expected SSA value first operand")?;
@@ -3071,25 +3062,6 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_jt() {
-        let ParseError {
-            location,
-            message,
-            is_warning,
-        } = Parser::new(
-            "function %blocks() system_v {
-                jt0 = jump_table []
-                jt0 = jump_table []",
-        )
-        .parse_function()
-        .unwrap_err();
-
-        assert_eq!(location.line_number, 3);
-        assert_eq!(message, "duplicate entity: jt0");
-        assert!(!is_warning);
-    }
-
-    #[test]
     fn duplicate_ss() {
         let ParseError {
             location,
@@ -3173,8 +3145,6 @@ mod tests {
                          function %comment() system_v { ; decl
                             ss10  = explicit_slot 13 ; stackslot.
                             ; Still stackslot.
-                            jt10 = jump_table [block0]
-                            ; Jumptable
                          block0: ; Basic block
                          trap user42; Instruction
                          } ; Trailing.
@@ -3183,7 +3153,7 @@ mod tests {
         .parse_function()
         .unwrap();
         assert_eq!(func.name.to_string(), "%comment");
-        assert_eq!(comments.len(), 8); // no 'before' comment.
+        assert_eq!(comments.len(), 7); // no 'before' comment.
         assert_eq!(
             comments[0],
             Comment {
@@ -3194,16 +3164,14 @@ mod tests {
         assert_eq!(comments[1].entity.to_string(), "ss10");
         assert_eq!(comments[2].entity.to_string(), "ss10");
         assert_eq!(comments[2].text, "; Still stackslot.");
-        assert_eq!(comments[3].entity.to_string(), "jt10");
-        assert_eq!(comments[3].text, "; Jumptable");
-        assert_eq!(comments[4].entity.to_string(), "block0");
-        assert_eq!(comments[4].text, "; Basic block");
+        assert_eq!(comments[3].entity.to_string(), "block0");
+        assert_eq!(comments[3].text, "; Basic block");
 
-        assert_eq!(comments[5].entity.to_string(), "inst0");
-        assert_eq!(comments[5].text, "; Instruction");
+        assert_eq!(comments[4].entity.to_string(), "inst0");
+        assert_eq!(comments[4].text, "; Instruction");
 
+        assert_eq!(comments[5].entity, AnyEntity::Function);
         assert_eq!(comments[6].entity, AnyEntity::Function);
-        assert_eq!(comments[7].entity, AnyEntity::Function);
     }
 
     #[test]

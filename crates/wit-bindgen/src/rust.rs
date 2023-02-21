@@ -11,11 +11,11 @@ pub enum TypeMode {
 }
 
 pub trait RustGenerator<'a> {
-    fn iface(&self) -> &'a Interface;
+    fn resolve(&self) -> &'a Resolve;
 
     fn push_str(&mut self, s: &str);
     fn info(&self, ty: TypeId) -> TypeInfo;
-    fn default_param_mode(&self) -> TypeMode;
+    fn current_interface(&self) -> Option<InterfaceId>;
 
     fn print_ty(&mut self, ty: &Type, mode: TypeMode) {
         match ty {
@@ -56,25 +56,41 @@ pub trait RustGenerator<'a> {
     fn print_tyid(&mut self, id: TypeId, mode: TypeMode) {
         let info = self.info(id);
         let lt = self.lifetime_for(&info, mode);
-        let ty = &self.iface().types[id];
+        let ty = &self.resolve().types[id];
         if ty.name.is_some() {
             let name = if lt.is_some() {
                 self.param_name(id)
             } else {
                 self.result_name(id)
             };
+            if let TypeOwner::Interface(id) = ty.owner {
+                if let Some(name) = &self.resolve().interfaces[id].name {
+                    match self.current_interface() {
+                        Some(cur) if cur == id => {}
+                        Some(_other) => {
+                            self.push_str("super::");
+                            self.push_str(&name.to_snake_case());
+                            self.push_str("::");
+                        }
+                        None => {
+                            self.push_str(&name.to_snake_case());
+                            self.push_str("::");
+                        }
+                    }
+                }
+            }
             self.push_str(&name);
 
             // If the type recursively owns data and it's a
             // variant/record/list, then we need to place the
             // lifetime parameter on the type as well.
-            if info.has_list && needs_generics(self.iface(), &ty.kind) {
+            if info.has_list && needs_generics(self.resolve(), &ty.kind) {
                 self.print_generics(lt);
             }
 
             return;
 
-            fn needs_generics(iface: &Interface, ty: &TypeDefKind) -> bool {
+            fn needs_generics(resolve: &Resolve, ty: &TypeDefKind) -> bool {
                 match ty {
                     TypeDefKind::Variant(_)
                     | TypeDefKind::Record(_)
@@ -87,9 +103,12 @@ pub trait RustGenerator<'a> {
                     | TypeDefKind::Enum(_)
                     | TypeDefKind::Tuple(_)
                     | TypeDefKind::Union(_) => true,
-                    TypeDefKind::Type(Type::Id(t)) => needs_generics(iface, &iface.types[*t].kind),
+                    TypeDefKind::Type(Type::Id(t)) => {
+                        needs_generics(resolve, &resolve.types[*t].kind)
+                    }
                     TypeDefKind::Type(Type::String) => true,
                     TypeDefKind::Type(_) => false,
+                    TypeDefKind::Unknown => unreachable!(),
                 }
             }
         }
@@ -150,6 +169,7 @@ pub trait RustGenerator<'a> {
             }
 
             TypeDefKind::Type(t) => self.print_ty(t, mode),
+            TypeDefKind::Unknown => unreachable!(),
         }
     }
 
@@ -188,10 +208,10 @@ pub trait RustGenerator<'a> {
     fn modes_of(&self, ty: TypeId) -> Vec<(String, TypeMode)> {
         let info = self.info(ty);
         let mut result = Vec::new();
-        if info.param {
-            result.push((self.param_name(ty), self.default_param_mode()));
+        if info.borrowed {
+            result.push((self.param_name(ty), TypeMode::AllBorrowed("'a")));
         }
-        if info.result && (!info.param || self.uses_two_names(&info)) {
+        if info.owned && (!info.borrowed || self.uses_two_names(&info)) {
             result.push((self.result_name(ty), TypeMode::Owned));
         }
         return result;
@@ -214,7 +234,7 @@ pub trait RustGenerator<'a> {
             Type::Char => out.push_str("Char"),
             Type::String => out.push_str("String"),
             Type::Id(id) => {
-                let ty = &self.iface().types[*id];
+                let ty = &self.resolve().types[*id];
                 match &ty.name {
                     Some(name) => out.push_str(&name.to_upper_camel_case()),
                     None => match &ty.kind {
@@ -244,6 +264,7 @@ pub trait RustGenerator<'a> {
                         TypeDefKind::Variant(_) => out.push_str("Variant"),
                         TypeDefKind::Enum(_) => out.push_str("Enum"),
                         TypeDefKind::Union(_) => out.push_str("Union"),
+                        TypeDefKind::Unknown => unreachable!(),
                     },
                 }
             }
@@ -309,7 +330,7 @@ pub trait RustGenerator<'a> {
 
     fn param_name(&self, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = self.iface().types[ty]
+        let name = self.resolve().types[ty]
             .name
             .as_ref()
             .unwrap()
@@ -323,7 +344,7 @@ pub trait RustGenerator<'a> {
 
     fn result_name(&self, ty: TypeId) -> String {
         let info = self.info(ty);
-        let name = self.iface().types[ty]
+        let name = self.resolve().types[ty]
             .name
             .as_ref()
             .unwrap()
@@ -336,13 +357,7 @@ pub trait RustGenerator<'a> {
     }
 
     fn uses_two_names(&self, info: &TypeInfo) -> bool {
-        info.has_list
-            && info.param
-            && info.result
-            && match self.default_param_mode() {
-                TypeMode::AllBorrowed(_) => true,
-                TypeMode::Owned => false,
-            }
+        info.has_list && info.borrowed && info.owned
     }
 
     fn lifetime_for(&self, info: &TypeInfo, mode: TypeMode) -> Option<&'static str> {
