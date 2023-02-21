@@ -8,8 +8,7 @@ block0(v0: f32, v1: f32):
 }
 
 ; block0:
-;   load_sym a4, %CmpF32+0
-;   call_ind a4
+;   call %CmpF32
 ;   bit a0, 2
 ;   mv.neq a0, zero, 1
 ;   ret
@@ -22,18 +21,16 @@ block0(v0: f64, v1: f64):
 }
 
 ; block0:
-;   load_sym a6, %CmpF64+0
-;   call_ind a6
+;   call %CmpF64
 ;   bit a0, 2
 ;   mv.neq a0, zero, 1
 ;   ret
 
 
-function %eq_brnz(f32, f32) -> i32 {
+function %eq_brif(f32, f32) -> i32 {
 block0(v0: f32, v1: f32):
   v2 = fcmp eq v0, v1
-  brnz v2, block1
-  jump block2
+  brif v2, block1, block2
 
 block1:
   v3 = iconst.i32 1
@@ -45,38 +42,9 @@ block2:
 }
 
 ; block0:
-;   load_sym a6, %CmpF32+0
-;   call_ind a6
+;   call %CmpF32
 ;   bit a0, 2
 ;   br.neq MachLabel(1), MachLabel(2)
-; block1:
-;   ldi a0, 1
-;   ret
-; block2:
-;   ldi a0, 2
-;   ret
-
-
-function %eq_brz(f32, f32) -> i32 {
-block0(v0: f32, v1: f32):
-  v2 = fcmp eq v0, v1
-  brz v2, block1
-  jump block2
-
-block1:
-  v3 = iconst.i32 1
-  return v3
-
-block2:
-  v4 = iconst.i32 2
-  return v4
-}
-
-; block0:
-;   load_sym a6, %CmpF32+0
-;   call_ind a6
-;   bit a0, 2
-;   br.eq MachLabel(1), MachLabel(2)
 ; block1:
 ;   ldi a0, 1
 ;   ret

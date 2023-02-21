@@ -1241,49 +1241,11 @@
 (decl partial lower_branch (Inst VecMachLabel) Unit)
 
 
-;;;; Rules for `brz`/`brnz` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;; Rules for `brif` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; `brz` following `icmp`
+;; `brif` following `icmp`
 (rule -1
-  (lower_branch (brz (icmp cc x @ (value_type $I64) y) _ _) targets)
-  (let
-    ( ;; targets
-      (taken JumpTarget (jump_target targets 0))
-      (not_taken JumpTarget (jump_target targets 1))
-      ;; comparison
-      (_ Unit (cmp_reg_reg (value_regs_get x 0) (value_regs_get y 0)))
-      (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1))))
-    (branch_rel (intcc_inverse cc) taken not_taken)))
-
-(rule -1
-  (lower_branch (brz (icmp cc x @ (value_type $I128) y) _ _) targets)
-  (let
-    ( ;; targets
-      (taken JumpTarget (jump_target targets 0))
-      (not_taken JumpTarget (jump_target targets 1))
-      ;; comparison
-      (_ Unit (cmp_reg_reg (value_regs_get x 0) (value_regs_get y 0)))
-      (_ Unit (cmpb_reg_reg (value_regs_get x 1) (value_regs_get y 1)))
-      (_ Unit (cmpb_reg_reg (value_regs_get x 2) (value_regs_get y 2)))
-      (_ Unit (cmpb_reg_reg (value_regs_get x 3) (value_regs_get y 3))))
-    (branch_rel (intcc_inverse cc) taken not_taken)))
-
-(rule -2
-  (lower_branch (brz (maybe_uextend (icmp cc x @ (value_type ty) y)) _ _) targets)
-  (let
-    ( ;; targets
-      (taken JumpTarget (jump_target targets 0))
-      (not_taken JumpTarget (jump_target targets 1))
-      ;; extend to 32 bit for comparison
-      (x_ext Reg (ext_to_32 (is_signed_cc cc) x ty))
-      (y_ext Reg (ext_to_32 (is_signed_cc cc) y ty))
-      ;; comparison
-      (_ Unit (cmp_reg_reg x_ext y_ext)))
-    (branch_rel (intcc_inverse cc) taken not_taken)))
-
-;; `brnz` following `icmp`
-(rule -1
-  (lower_branch (brnz (icmp cc x @ (value_type $I64) y) _ _) targets)
+  (lower_branch (brif (icmp cc x @ (value_type $I64) y) _ _) targets)
   (let
     ( ;; targets
       (taken JumpTarget (jump_target targets 0))
@@ -1294,7 +1256,7 @@
     (branch_rel cc taken not_taken)))
 
 (rule -1
-  (lower_branch (brnz (icmp cc x @ (value_type $I128) y) _ _) targets)
+  (lower_branch (brif (icmp cc x @ (value_type $I128) y) _ _) targets)
   (let
     ( ;; targets
       (taken JumpTarget (jump_target targets 0))
@@ -1307,7 +1269,7 @@
     (branch_rel cc taken not_taken)))
 
 (rule -2
-  (lower_branch (brnz (maybe_uextend (icmp cc x @ (value_type ty) y)) _ _) targets)
+  (lower_branch (brif (maybe_uextend (icmp cc x @ (value_type ty) y)) _ _) targets)
   (let
     ( ;; targets
       (taken JumpTarget (jump_target targets 0))
@@ -1319,44 +1281,9 @@
       (_ Unit (cmp_reg_reg x_ext y_ext)))
     (branch_rel cc taken not_taken)))
 
-;; standard `brz`
+;; standard `brif`
 (rule -3
-  (lower_branch (brz c @ (value_type $I64) _ _) targets)
-  (let
-    ( ;; targets
-      (taken JumpTarget (jump_target targets 0))
-      (not_taken JumpTarget (jump_target targets 1))
-      ;; comparison
-      (_ Unit (cmp_reg_imm (value_regs_get c 0) (imm15 0)))
-      (_ Unit (cmpb_reg_imm (value_regs_get c 1) (imm15 0))))
-    (branch_rel (IntCC.Equal) taken not_taken)))
-
-(rule -3
-  (lower_branch (brz c @ (value_type $I128) _ _) targets)
-  (let
-    ( ;; targets
-      (taken JumpTarget (jump_target targets 0))
-      (not_taken JumpTarget (jump_target targets 1))
-      ;; comparison
-      (_ Unit (cmp_reg_imm (value_regs_get c 0) (imm15 0)))
-      (_ Unit (cmpb_reg_imm (value_regs_get c 1) (imm15 0)))
-      (_ Unit (cmpb_reg_imm (value_regs_get c 2) (imm15 0)))
-      (_ Unit (cmpb_reg_imm (value_regs_get c 3) (imm15 0))))
-    (branch_rel (IntCC.Equal) taken not_taken)))
-
-(rule -4
-  (lower_branch (brz c @ (value_type ty) _ _) targets)
-  (let
-    ( ;; targets
-      (taken JumpTarget (jump_target targets 0))
-      (not_taken JumpTarget (jump_target targets 1))
-      ;; comparison
-      (_ Unit (cmp_reg_imm c (imm15 0))))
-    (branch_rel (IntCC.Equal) taken not_taken)))
-
-;; standard `brnz`
-(rule -3
-  (lower_branch (brnz c @ (value_type $I64) _ _) targets)
+  (lower_branch (brif c @ (value_type $I64) _ _) targets)
   (let
     ( ;; targets
       (taken JumpTarget (jump_target targets 0))
@@ -1367,7 +1294,7 @@
     (branch_rel (IntCC.NotEqual) taken not_taken)))
 
 (rule -3
-  (lower_branch (brnz c @ (value_type $I128) _ _) targets)
+  (lower_branch (brif c @ (value_type $I128) _ _) targets)
   (let
     ( ;; targets
       (taken JumpTarget (jump_target targets 0))
@@ -1380,7 +1307,7 @@
     (branch_rel (IntCC.NotEqual) taken not_taken)))
 
 (rule -4
-  (lower_branch (brnz c @ (value_type ty) _ _) targets)
+  (lower_branch (brif c @ (value_type ty) _ _) targets)
   (let
     ( ;; targets
       (taken JumpTarget (jump_target targets 0))
@@ -1392,13 +1319,13 @@
 
 ;;;; Rules for `jump` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule (lower_branch (jump _ _) targets)
+(rule (lower_branch (jump _) targets)
   (jump_rel (jump_target targets 0)))
 
 
 ;;;; Rules for `br_table` ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(rule (lower_branch (br_table index _ _) targets)
+(rule (lower_branch (br_table index _) targets)
   (lower_jump_table index targets))
 
 
@@ -1915,34 +1842,9 @@
       (_ Unit (bit_reg_imm (value_regs_get c 0) (floatcc_mask cc))))
     (cond_move_reg_imm (IntCC.NotEqual) (zero_reg) (imm15 1))))
 
-;; `brz` following `fcmp`
+;; `brif` following `fcmp`
 (rule -1
-  (lower_branch (brz (fcmp cc x @ (value_type $F64) y) _ _) targets)
-  (let
-    ( ;; targets
-      (taken JumpTarget (jump_target targets 0))
-      (not_taken JumpTarget (jump_target targets 1))
-      ;; call comparison function
-      (c ValueRegs (libcall_2 (LibCall.CmpF64) $F64 x $F64 y $I8))
-      ;; perform bit comparison with mask
-      (_ Unit (bit_reg_imm (value_regs_get c 0) (floatcc_mask cc))))
-    (branch_rel (IntCC.Equal) taken not_taken)))
-
-(rule -1
-  (lower_branch (brz (fcmp cc x @ (value_type $F32) y) _ _) targets)
-  (let
-    ( ;; targets
-      (taken JumpTarget (jump_target targets 0))
-      (not_taken JumpTarget (jump_target targets 1))
-      ;; call comparison function
-      (c ValueRegs (libcall_2 (LibCall.CmpF32) $F32 x $F32 y $I8))
-      ;; perform bit comparison with mask
-      (_ Unit (bit_reg_imm (value_regs_get c 0) (floatcc_mask cc))))
-    (branch_rel (IntCC.Equal) taken not_taken)))
-
-;; `brnz` following `fcmp`
-(rule -1
-  (lower_branch (brnz (fcmp cc x @ (value_type $F64) y) _ _) targets)
+  (lower_branch (brif (fcmp cc x @ (value_type $F64) y) _ _) targets)
   (let
     ( ;; targets
       (taken JumpTarget (jump_target targets 0))
@@ -1954,7 +1856,7 @@
     (branch_rel (IntCC.NotEqual) taken not_taken)))
 
 (rule -1
-  (lower_branch (brnz (fcmp cc x @ (value_type $F32) y) _ _) targets)
+  (lower_branch (brif (fcmp cc x @ (value_type $F32) y) _ _) targets)
   (let
     ( ;; targets
       (taken JumpTarget (jump_target targets 0))

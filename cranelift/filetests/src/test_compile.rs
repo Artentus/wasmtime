@@ -67,30 +67,15 @@ impl SubTest for TestCompile {
         info!("Generated {} bytes of code:\n{}", total_size, vcode);
 
         if self.precise_output {
-            check_precise_output(isa, &params, &compiled_code, context)
+            check_precise_output(&vcode, context)
         } else {
             run_filecheck(&vcode, context)
         }
     }
 }
 
-fn check_precise_output(
-    isa: &dyn isa::TargetIsa,
-    params: &FunctionParameters,
-    compiled_code: &CompiledCode,
-    context: &Context,
-) -> Result<()> {
-    let cs = isa
-        .to_capstone()
-        .map_err(|e| anyhow::format_err!("{}", e))?;
-    let dis = compiled_code.disassemble(Some(params), &cs)?;
-
-    let actual = Vec::from_iter(
-        std::iter::once("VCode:")
-            .chain(compiled_code.vcode.as_ref().unwrap().lines())
-            .chain(["", "Disassembled:"])
-            .chain(dis.lines()),
-    );
+fn check_precise_output(text: &str, context: &Context) -> Result<()> {
+    let actual = text.lines().collect::<Vec<_>>();
 
     // Use the comments after the function to build the test expectation.
     let expected = context

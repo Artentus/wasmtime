@@ -8,8 +8,7 @@ block0(v0: f32, v1: f32):
 }
 
 ; block0:
-;   load_sym a4, %AddF32+0
-;   call_ind a4
+;   call %AddF32
 ;   ret
 
 function %f2(f64, f64) -> f64 {
@@ -19,8 +18,7 @@ block0(v0: f64, v1: f64):
 }
 
 ; block0:
-;   load_sym a7, %AddF64+0
-;   call_ind a7
+;   call %AddF64
 ;   ret
 
 function %f3(f32, f32) -> f32 {
@@ -30,8 +28,7 @@ block0(v0: f32, v1: f32):
 }
 
 ; block0:
-;   load_sym a4, %SubF32+0
-;   call_ind a4
+;   call %SubF32
 ;   ret
 
 function %f4(f64, f64) -> f64 {
@@ -41,8 +38,7 @@ block0(v0: f64, v1: f64):
 }
 
 ; block0:
-;   load_sym a7, %SubF64+0
-;   call_ind a7
+;   call %SubF64
 ;   ret
 
 function %f5(f32, f32) -> f32 {
@@ -52,8 +48,7 @@ block0(v0: f32, v1: f32):
 }
 
 ; block0:
-;   load_sym a4, %MulF32+0
-;   call_ind a4
+;   call %MulF32
 ;   ret
 
 function %f6(f64, f64) -> f64 {
@@ -63,8 +58,7 @@ block0(v0: f64, v1: f64):
 }
 
 ; block0:
-;   load_sym a7, %MulF64+0
-;   call_ind a7
+;   call %MulF64
 ;   ret
 
 function %f7(f32, f32) -> f32 {
@@ -74,8 +68,7 @@ block0(v0: f32, v1: f32):
 }
 
 ; block0:
-;   load_sym a4, %DivF32+0
-;   call_ind a4
+;   call %DivF32
 ;   ret
 
 function %f8(f64, f64) -> f64 {
@@ -85,8 +78,7 @@ block0(v0: f64, v1: f64):
 }
 
 ; block0:
-;   load_sym a7, %DivF64+0
-;   call_ind a7
+;   call %DivF64
 ;   ret
 
 function %f9(f32, f32) -> f32 {
@@ -96,8 +88,7 @@ block0(v0: f32, v1: f32):
 }
 
 ; block0:
-;   load_sym a4, %MinF32+0
-;   call_ind a4
+;   call %MinF32
 ;   ret
 
 function %f10(f64, f64) -> f64 {
@@ -107,8 +98,7 @@ block0(v0: f64, v1: f64):
 }
 
 ; block0:
-;   load_sym a7, %MinF64+0
-;   call_ind a7
+;   call %MinF64
 ;   ret
 
 function %f11(f32, f32) -> f32 {
@@ -118,8 +108,7 @@ block0(v0: f32, v1: f32):
 }
 
 ; block0:
-;   load_sym a4, %MaxF32+0
-;   call_ind a4
+;   call %MaxF32
 ;   ret
 
 function %f12(f64, f64) -> f64 {
@@ -129,8 +118,7 @@ block0(v0: f64, v1: f64):
 }
 
 ; block0:
-;   load_sym a7, %MaxF64+0
-;   call_ind a7
+;   call %MaxF64
 ;   ret
 
 function %f13(f32) -> f32 {
@@ -140,8 +128,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a3, %SqrtF32+0
-;   call_ind a3
+;   call %SqrtF32
 ;   ret
 
 function %f15(f64) -> f64 {
@@ -151,8 +138,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a5, %SqrtF64+0
-;   call_ind a5
+;   call %SqrtF64
 ;   ret
 
 function %f16(f32) -> f32 {
@@ -162,8 +148,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a3, %AbsF32+0
-;   call_ind a3
+;   call %AbsF32
 ;   ret
 
 function %f17(f64) -> f64 {
@@ -173,8 +158,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a5, %AbsF64+0
-;   call_ind a5
+;   call %AbsF64
 ;   ret
 
 function %f18(f32) -> f32 {
@@ -184,8 +168,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a3, %NegF32+0
-;   call_ind a3
+;   call %NegF32
 ;   ret
 
 function %f19(f64) -> f64 {
@@ -195,8 +178,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a5, %NegF64+0
-;   call_ind a5
+;   call %NegF64
 ;   ret
 
 function %f20(f32) -> f64 {
@@ -206,8 +188,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a4, %Promote+0
-;   call_ind a4
+;   call %Promote
 ;   ret
 
 function %f21(f64) -> f32 {
@@ -217,8 +198,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a4, %Demote+0
-;   call_ind a4
+;   call %Demote
 ;   ret
 
 function %f22(f32) -> f32 {
@@ -228,8 +208,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a3, %CeilF32+0
-;   call_ind a3
+;   call %CeilF32
 ;   ret
 
 function %f22(f64) -> f64 {
@@ -239,8 +218,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a5, %CeilF64+0
-;   call_ind a5
+;   call %CeilF64
 ;   ret
 
 function %f23(f32) -> f32 {
@@ -250,8 +228,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a3, %FloorF32+0
-;   call_ind a3
+;   call %FloorF32
 ;   ret
 
 function %f24(f64) -> f64 {
@@ -261,8 +238,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a5, %FloorF64+0
-;   call_ind a5
+;   call %FloorF64
 ;   ret
 
 function %f25(f32) -> f32 {
@@ -272,8 +248,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a3, %TruncF32+0
-;   call_ind a3
+;   call %TruncF32
 ;   ret
 
 function %f26(f64) -> f64 {
@@ -283,8 +258,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a5, %TruncF64+0
-;   call_ind a5
+;   call %TruncF64
 ;   ret
 
 function %f27(f32) -> f32 {
@@ -294,8 +268,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a3, %NearestF32+0
-;   call_ind a3
+;   call %NearestF32
 ;   ret
 
 function %f28(f64) -> f64 {
@@ -305,8 +278,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a5, %NearestF64+0
-;   call_ind a5
+;   call %NearestF64
 ;   ret
 
 function %f29(f32, f32, f32) -> f32 {
@@ -316,8 +288,7 @@ block0(v0: f32, v1: f32, v2: f32):
 }
 
 ; block0:
-;   load_sym a5, %FmaF32+0
-;   call_ind a5
+;   call %FmaF32
 ;   ret
 
 function %f30(f64, f64, f64) -> f64 {
@@ -327,8 +298,7 @@ block0(v0: f64, v1: f64, v2: f64):
 }
 
 ; block0:
-;   load_sym t1, %FmaF64+0
-;   call_ind t1
+;   call %FmaF64
 ;   ret
 
 function %f31(f32, f32) -> f32 {
@@ -338,8 +308,7 @@ block0(v0: f32, v1: f32):
 }
 
 ; block0:
-;   load_sym a4, %CopySignF32+0
-;   call_ind a4
+;   call %CopySignF32
 ;   ret
 
 function %f32(f64, f64) -> f64 {
@@ -349,8 +318,7 @@ block0(v0: f64, v1: f64):
 }
 
 ; block0:
-;   load_sym a7, %CopySignF64+0
-;   call_ind a7
+;   call %CopySignF64
 ;   ret
 
 function %f33(f32) -> i32 {
@@ -360,8 +328,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a3, %CvtF32U32+0
-;   call_ind a3
+;   call %CvtF32U32
 ;   ret
 
 function %f34(f32) -> i32 {
@@ -371,8 +338,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a3, %CvtF32S32+0
-;   call_ind a3
+;   call %CvtF32S32
 ;   ret
 
 function %f35(f32) -> i64 {
@@ -382,8 +348,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a4, %CvtF32U64+0
-;   call_ind a4
+;   call %CvtF32U64
 ;   ret
 
 function %f36(f32) -> i64 {
@@ -393,8 +358,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a4, %CvtF32S64+0
-;   call_ind a4
+;   call %CvtF32S64
 ;   ret
 
 function %f37(f64) -> i32 {
@@ -404,8 +368,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a4, %CvtF64U32+0
-;   call_ind a4
+;   call %CvtF64U32
 ;   ret
 
 function %f38(f64) -> i32 {
@@ -415,8 +378,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a4, %CvtF64S32+0
-;   call_ind a4
+;   call %CvtF64S32
 ;   ret
 
 function %f39(f64) -> i64 {
@@ -426,8 +388,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a5, %CvtF64U64+0
-;   call_ind a5
+;   call %CvtF64U64
 ;   ret
 
 function %f40(f64) -> i64 {
@@ -437,8 +398,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a5, %CvtF64S64+0
-;   call_ind a5
+;   call %CvtF64S64
 ;   ret
 
 function %f41(f32) -> i32 {
@@ -448,8 +408,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a3, %CvtF32U32Sat+0
-;   call_ind a3
+;   call %CvtF32U32Sat
 ;   ret
 
 function %f42(f32) -> i32 {
@@ -459,8 +418,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a3, %CvtF32S32Sat+0
-;   call_ind a3
+;   call %CvtF32S32Sat
 ;   ret
 
 function %f43(f32) -> i64 {
@@ -470,8 +428,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a4, %CvtF32U64Sat+0
-;   call_ind a4
+;   call %CvtF32U64Sat
 ;   ret
 
 function %f44(f32) -> i64 {
@@ -481,8 +438,7 @@ block0(v0: f32):
 }
 
 ; block0:
-;   load_sym a4, %CvtF32S64Sat+0
-;   call_ind a4
+;   call %CvtF32S64Sat
 ;   ret
 
 function %f45(f64) -> i32 {
@@ -492,8 +448,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a4, %CvtF64U32Sat+0
-;   call_ind a4
+;   call %CvtF64U32Sat
 ;   ret
 
 function %f46(f64) -> i32 {
@@ -503,8 +458,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a4, %CvtF64S32Sat+0
-;   call_ind a4
+;   call %CvtF64S32Sat
 ;   ret
 
 function %f47(f64) -> i64 {
@@ -514,8 +468,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a5, %CvtF64U64Sat+0
-;   call_ind a5
+;   call %CvtF64U64Sat
 ;   ret
 
 function %f48(f64) -> i64 {
@@ -525,8 +478,7 @@ block0(v0: f64):
 }
 
 ; block0:
-;   load_sym a5, %CvtF64S64Sat+0
-;   call_ind a5
+;   call %CvtF64S64Sat
 ;   ret
 
 function %f49(i32) -> f32 {
@@ -536,8 +488,7 @@ block0(v0: i32):
 }
 
 ; block0:
-;   load_sym a3, %CvtU32F32+0
-;   call_ind a3
+;   call %CvtU32F32
 ;   ret
 
 function %f50(i32) -> f32 {
@@ -547,8 +498,7 @@ block0(v0: i32):
 }
 
 ; block0:
-;   load_sym a3, %CvtS32F32+0
-;   call_ind a3
+;   call %CvtS32F32
 ;   ret
 
 function %f51(i64) -> f32 {
@@ -558,8 +508,7 @@ block0(v0: i64):
 }
 
 ; block0:
-;   load_sym a4, %CvtU64F32+0
-;   call_ind a4
+;   call %CvtU64F32
 ;   ret
 
 function %f52(i64) -> f32 {
@@ -569,8 +518,7 @@ block0(v0: i64):
 }
 
 ; block0:
-;   load_sym a4, %CvtS64F32+0
-;   call_ind a4
+;   call %CvtS64F32
 ;   ret
 
 function %f53(i32) -> f64 {
@@ -580,8 +528,7 @@ block0(v0: i32):
 }
 
 ; block0:
-;   load_sym a4, %CvtU32F64+0
-;   call_ind a4
+;   call %CvtU32F64
 ;   ret
 
 function %f54(i32) -> f64 {
@@ -591,8 +538,7 @@ block0(v0: i32):
 }
 
 ; block0:
-;   load_sym a4, %CvtS32F64+0
-;   call_ind a4
+;   call %CvtS32F64
 ;   ret
 
 function %f55(i64) -> f64 {
@@ -602,8 +548,7 @@ block0(v0: i64):
 }
 
 ; block0:
-;   load_sym a5, %CvtU64F64+0
-;   call_ind a5
+;   call %CvtU64F64
 ;   ret
 
 function %f56(i64) -> f64 {
@@ -613,6 +558,5 @@ block0(v0: i64):
 }
 
 ; block0:
-;   load_sym a5, %CvtS64F64+0
-;   call_ind a5
+;   call %CvtS64F64
 ;   ret
