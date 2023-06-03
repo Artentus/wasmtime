@@ -77,13 +77,15 @@ x86 = []
 arm64 = []
 s390x = []
 riscv64 = []
+arm32 = []
 
 # Option to enable all architectures.
 all-arch = [
     "x86",
     "arm64",
     "s390x",
-    "riscv64"
+    "riscv64",
+    "arm32"
 ]
 
 # For dependent crates that want to serialize some parts of cranelift

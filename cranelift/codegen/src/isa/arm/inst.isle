@@ -1,0 +1,48 @@
+;; Instruction formats.
+(type MInst
+    (enum))
+
+;; An addressing mode specified for a load/store operation.
+(type AMode
+    (enum
+        ;; Offset from the stack pointer.
+        (SPOffset
+            (off i64)
+            (ty Type))
+
+        ;; Offset from the frame pointer.
+        (FPOffset
+            (off i64)
+            (ty Type))
+
+        ;; Offset from the "nominal stack pointer", which is where the real SP is
+        ;; just after stack and spill slots are allocated in the function prologue.
+        ;; At emission time, this is converted to `SPOffset` with a fixup added to
+        ;; the offset constant. The fixup is a running value that is tracked as
+        ;; emission iterates through instructions in linear order, and can be
+        ;; adjusted up and down with [Inst::VirtualSPOffsetAdj].
+        ;;
+        ;; The standard ABI is in charge of handling this (by emitting the
+        ;; adjustment meta-instructions). It maintains the invariant that "nominal
+        ;; SP" is where the actual SP is after the function prologue and before
+        ;; clobber pushes. See the diagram in the documentation for
+        ;; [crate::isa::arm::abi](the ABI module) for more details.
+        (NominalSPOffset
+            (off i64)
+            (ty Type))))
+
+(type BoxCallInfo (primitive BoxCallInfo))
+(type BoxCallIndInfo (primitive BoxCallIndInfo))
+(type BoxJTSequenceInfo (primitive BoxJTSequenceInfo))
+(type VecMachLabel extern (enum))
+
+(decl placeholder () Unit)
+(extern constructor placeholder placeholder)
+
+;;;; Helpers for Emitting Calls ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(decl gen_call (SigRef ExternalName RelocDistance ValueSlice) InstOutput)
+(extern constructor gen_call gen_call)
+
+(decl gen_call_indirect (SigRef Value ValueSlice) InstOutput)
+(extern constructor gen_call_indirect gen_call_indirect)
