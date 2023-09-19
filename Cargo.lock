@@ -152,7 +152,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "miniz_oxide",
- "object",
+ "object 0.32.0",
  "rustc-demangle",
 ]
 
@@ -763,7 +763,7 @@ dependencies = [
  "cranelift-frontend",
  "cranelift-module",
  "log",
- "object",
+ "object 0.32.1",
  "target-lexicon",
 ]
 
@@ -1867,6 +1867,14 @@ version = "0.32.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ac5bbd07aea88c60a577a1ce218075ffd59208b2d7ca97adf9bfc5aeb21ebe"
 dependencies = [
+ "memchr",
+]
+
+[[package]]
+name = "object"
+version = "0.32.1"
+source = "git+https://github.com/Artentus/object.git?branch=custom-targets#704e6710179ad6c14f61dc29159a8505453936c7"
+dependencies = [
  "crc32fast",
  "hashbrown 0.14.0",
  "indexmap 2.0.0",
@@ -2606,9 +2614,8 @@ dependencies = [
 
 [[package]]
 name = "target-lexicon"
-version = "0.12.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7fa7e55043acb85fca6b3c01485a2eeb6b69c5d21002e273c79e465f43b7ac1"
+version = "0.12.11"
+source = "git+https://github.com/Artentus/target-lexicon.git?branch=custom-targets#633b4dbc917bc02bf2b8e5404419ae4f15ffbf06"
 
 [[package]]
 name = "tempfile"
@@ -3056,7 +3063,7 @@ name = "wasi-preview1-component-adapter"
 version = "14.0.0"
 dependencies = [
  "byte-array-literals",
- "object",
+ "object 0.32.1",
  "wasi",
  "wasm-encoder",
  "wit-bindgen",
@@ -3284,7 +3291,7 @@ dependencies = [
  "indexmap 2.0.0",
  "libc",
  "log",
- "object",
+ "object 0.32.1",
  "once_cell",
  "paste",
  "psm",
@@ -3477,7 +3484,7 @@ dependencies = [
  "cranelift-wasm",
  "gimli",
  "log",
- "object",
+ "object 0.32.1",
  "target-lexicon",
  "thiserror",
  "wasmparser",
@@ -3495,7 +3502,7 @@ dependencies = [
  "cranelift-control",
  "cranelift-native",
  "gimli",
- "object",
+ "object 0.32.1",
  "target-lexicon",
  "wasmtime-environ",
 ]
@@ -3512,7 +3519,7 @@ dependencies = [
  "gimli",
  "indexmap 2.0.0",
  "log",
- "object",
+ "object 0.32.1",
  "serde",
  "serde_derive",
  "target-lexicon",
@@ -3633,7 +3640,7 @@ dependencies = [
  "gimli",
  "ittapi",
  "log",
- "object",
+ "object 0.32.1",
  "rustc-demangle",
  "rustix 0.38.8",
  "serde",
@@ -3650,7 +3657,7 @@ dependencies = [
 name = "wasmtime-jit-debug"
 version = "14.0.0"
 dependencies = [
- "object",
+ "object 0.32.1",
  "once_cell",
  "rustix 0.38.8",
  "wasmtime-versioned-export-macros",
@@ -3813,7 +3820,7 @@ dependencies = [
  "anyhow",
  "cranelift-codegen",
  "gimli",
- "object",
+ "object 0.32.1",
  "target-lexicon",
  "wasmparser",
  "wasmtime-cranelift-shared",

@@ -192,7 +192,7 @@ byte-array-literals = { path = "crates/wasi-preview1-component-adapter/byte-arra
 regalloc2 = "0.9.2"
 
 # cap-std family:
-target-lexicon = { version = "0.12.3", default-features = false, features = ["std"] }
+target-lexicon = { git = "https://github.com/Artentus/target-lexicon.git", branch = "custom-targets", default-features = false, features = ["std"] }
 cap-std = "2.0.0"
 cap-rand = { version = "2.0.0", features = ["small_rng"] }
 cap-fs-ext = "2.0.0"
@@ -221,7 +221,7 @@ wit-component = "0.14.2"
 
 # Non-Bytecode Alliance maintained dependencies:
 # --------------------------
-object = { version = "0.32", default-features = false, features = ['read_core', 'elf', 'std'] }
+object = { git = "https://github.com/Artentus/object.git", branch = "custom-targets", default-features = false, features = ['read_core', 'elf', 'std'] }
 gimli = { version = "0.28.0", default-features = false, features = ['read', 'std'] }
 anyhow = "1.0.22"
 windows-sys = "0.48.0"
