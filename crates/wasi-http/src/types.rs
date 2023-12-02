@@ -1,449 +1,438 @@
 //! Implements the base structure (i.e. [WasiHttpCtx]) that will provide the
 //! implementation of the wasi-http API.
 
-use crate::bindings::http::types::{
-    IncomingStream, Method, OutgoingRequest, OutgoingStream, RequestOptions, Scheme,
+use crate::io::TokioIo;
+use crate::{
+    bindings::http::types::{self, Method, Scheme},
+    body::{HostIncomingBody, HyperIncomingBody, HyperOutgoingBody},
+    dns_error, hyper_request_error,
 };
-use bytes::Bytes;
+use http_body_util::BodyExt;
+use hyper::header::HeaderName;
 use std::any::Any;
-use std::collections::HashMap;
-use std::ops::{Deref, DerefMut};
-use wasmtime_wasi::preview2::{
-    pipe::{AsyncReadStream, AsyncWriteStream},
-    HostInputStream, HostOutputStream, Table, TableError, TableStreamExt, WasiView,
-};
-
-const MAX_BUF_SIZE: usize = 65_536;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::net::TcpStream;
+use tokio::time::timeout;
+use wasmtime::component::Resource;
+use wasmtime_wasi::preview2::{self, AbortOnDropJoinHandle, Subscribe, Table};
 
 /// Capture the state necessary for use in the wasi-http API implementation.
-pub struct WasiHttpCtx {
-    pub streams: HashMap<u32, Stream>,
-}
+pub struct WasiHttpCtx;
 
-impl WasiHttpCtx {
-    /// Make a new context from the default state.
-    pub fn new() -> Self {
-        Self {
-            streams: HashMap::new(),
-        }
-    }
-}
-
-pub trait WasiHttpView: WasiView {
-    fn http_ctx(&self) -> &WasiHttpCtx;
-    fn http_ctx_mut(&mut self) -> &mut WasiHttpCtx;
-}
-
-pub type FieldsMap = HashMap<String, Vec<Vec<u8>>>;
-
-#[derive(Clone, Debug)]
-pub struct ActiveRequest {
-    pub active: bool,
-    pub method: Method,
-    pub scheme: Option<Scheme>,
-    pub path_with_query: String,
+pub struct OutgoingRequest {
+    pub use_tls: bool,
     pub authority: String,
-    pub headers: Option<u32>,
-    pub body: Option<u32>,
+    pub request: hyper::Request<HyperOutgoingBody>,
+    pub connect_timeout: Duration,
+    pub first_byte_timeout: Duration,
+    pub between_bytes_timeout: Duration,
 }
 
-pub trait HttpRequest: Send + Sync {
-    fn new() -> Self
-    where
-        Self: Sized;
+pub trait WasiHttpView: Send {
+    fn ctx(&mut self) -> &mut WasiHttpCtx;
+    fn table(&mut self) -> &mut Table;
 
-    fn as_any(&self) -> &dyn Any;
-
-    fn method(&self) -> &Method;
-    fn scheme(&self) -> &Option<Scheme>;
-    fn path_with_query(&self) -> &str;
-    fn authority(&self) -> &str;
-    fn headers(&self) -> Option<u32>;
-    fn set_headers(&mut self, headers: u32);
-    fn body(&self) -> Option<u32>;
-    fn set_body(&mut self, body: u32);
-}
-
-impl HttpRequest for ActiveRequest {
-    fn new() -> Self {
-        Self {
-            active: false,
-            method: Method::Get,
-            scheme: Some(Scheme::Http),
-            path_with_query: "".to_string(),
-            authority: "".to_string(),
-            headers: None,
-            body: None,
-        }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn method(&self) -> &Method {
-        &self.method
-    }
-
-    fn scheme(&self) -> &Option<Scheme> {
-        &self.scheme
-    }
-
-    fn path_with_query(&self) -> &str {
-        &self.path_with_query
-    }
-
-    fn authority(&self) -> &str {
-        &self.authority
-    }
-
-    fn headers(&self) -> Option<u32> {
-        self.headers
-    }
-
-    fn set_headers(&mut self, headers: u32) {
-        self.headers = Some(headers);
-    }
-
-    fn body(&self) -> Option<u32> {
-        self.body
-    }
-
-    fn set_body(&mut self, body: u32) {
-        self.body = Some(body);
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ActiveResponse {
-    pub active: bool,
-    pub status: u16,
-    pub headers: Option<u32>,
-    pub body: Option<u32>,
-    pub trailers: Option<u32>,
-}
-
-pub trait HttpResponse: Send + Sync {
-    fn new() -> Self
-    where
-        Self: Sized;
-
-    fn as_any(&self) -> &dyn Any;
-
-    fn status(&self) -> u16;
-    fn headers(&self) -> Option<u32>;
-    fn set_headers(&mut self, headers: u32);
-    fn body(&self) -> Option<u32>;
-    fn set_body(&mut self, body: u32);
-    fn trailers(&self) -> Option<u32>;
-    fn set_trailers(&mut self, trailers: u32);
-}
-
-impl HttpResponse for ActiveResponse {
-    fn new() -> Self {
-        Self {
-            active: false,
-            status: 0,
-            headers: None,
-            body: None,
-            trailers: None,
-        }
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    fn status(&self) -> u16 {
-        self.status
-    }
-
-    fn headers(&self) -> Option<u32> {
-        self.headers
-    }
-
-    fn set_headers(&mut self, headers: u32) {
-        self.headers = Some(headers);
-    }
-
-    fn body(&self) -> Option<u32> {
-        self.body
-    }
-
-    fn set_body(&mut self, body: u32) {
-        self.body = Some(body);
-    }
-
-    fn trailers(&self) -> Option<u32> {
-        self.trailers
-    }
-
-    fn set_trailers(&mut self, trailers: u32) {
-        self.trailers = Some(trailers);
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ActiveFuture {
-    request_id: OutgoingRequest,
-    options: Option<RequestOptions>,
-    response_id: Option<u32>,
-    pollable_id: Option<u32>,
-}
-
-impl ActiveFuture {
-    pub fn new(request_id: OutgoingRequest, options: Option<RequestOptions>) -> Self {
-        Self {
-            request_id,
-            options,
-            response_id: None,
-            pollable_id: None,
-        }
-    }
-
-    pub fn request_id(&self) -> u32 {
-        self.request_id
-    }
-
-    pub fn options(&self) -> Option<RequestOptions> {
-        self.options
-    }
-
-    pub fn response_id(&self) -> Option<u32> {
-        self.response_id
-    }
-
-    pub fn set_response_id(&mut self, response_id: u32) {
-        self.response_id = Some(response_id);
-    }
-
-    pub fn pollable_id(&self) -> Option<u32> {
-        self.pollable_id
-    }
-
-    pub fn set_pollable_id(&mut self, pollable_id: u32) {
-        self.pollable_id = Some(pollable_id);
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ActiveFields(HashMap<String, Vec<Vec<u8>>>);
-
-impl ActiveFields {
-    pub fn new() -> Self {
-        Self(FieldsMap::new())
-    }
-}
-
-pub trait HttpFields: Send + Sync {
-    fn as_any(&self) -> &dyn Any;
-}
-
-impl HttpFields for ActiveFields {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-impl Deref for ActiveFields {
-    type Target = FieldsMap;
-    fn deref(&self) -> &FieldsMap {
-        &self.0
-    }
-}
-
-impl DerefMut for ActiveFields {
-    fn deref_mut(&mut self) -> &mut FieldsMap {
-        &mut self.0
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Stream {
-    input_id: u32,
-    output_id: u32,
-    parent_id: u32,
-}
-
-impl Stream {
-    pub fn new(input_id: u32, output_id: u32, parent_id: u32) -> Self {
-        Self {
-            input_id,
-            output_id,
-            parent_id,
-        }
-    }
-
-    pub fn incoming(&self) -> IncomingStream {
-        self.input_id
-    }
-
-    pub fn outgoing(&self) -> OutgoingStream {
-        self.output_id
-    }
-
-    pub fn parent_id(&self) -> u32 {
-        self.parent_id
-    }
-}
-
-#[async_trait::async_trait]
-pub trait TableHttpExt {
-    fn push_request(&mut self, request: Box<dyn HttpRequest>) -> Result<u32, TableError>;
-    fn get_request(&self, id: u32) -> Result<&(dyn HttpRequest), TableError>;
-    fn get_request_mut(&mut self, id: u32) -> Result<&mut Box<dyn HttpRequest>, TableError>;
-    fn delete_request(&mut self, id: u32) -> Result<(), TableError>;
-
-    fn push_response(&mut self, response: Box<dyn HttpResponse>) -> Result<u32, TableError>;
-    fn get_response(&self, id: u32) -> Result<&dyn HttpResponse, TableError>;
-    fn get_response_mut(&mut self, id: u32) -> Result<&mut Box<dyn HttpResponse>, TableError>;
-    fn delete_response(&mut self, id: u32) -> Result<(), TableError>;
-
-    fn push_future(&mut self, future: Box<ActiveFuture>) -> Result<u32, TableError>;
-    fn get_future(&self, id: u32) -> Result<&ActiveFuture, TableError>;
-    fn get_future_mut(&mut self, id: u32) -> Result<&mut Box<ActiveFuture>, TableError>;
-    fn delete_future(&mut self, id: u32) -> Result<(), TableError>;
-
-    fn push_fields(&mut self, fields: Box<ActiveFields>) -> Result<u32, TableError>;
-    fn get_fields(&self, id: u32) -> Result<&ActiveFields, TableError>;
-    fn get_fields_mut(&mut self, id: u32) -> Result<&mut Box<ActiveFields>, TableError>;
-    fn delete_fields(&mut self, id: u32) -> Result<(), TableError>;
-
-    async fn push_stream(
+    fn new_incoming_request(
         &mut self,
-        content: Bytes,
-        parent: u32,
-    ) -> Result<(u32, Stream), TableError>;
-    fn get_stream(&self, id: u32) -> Result<&Stream, TableError>;
-    fn get_stream_mut(&mut self, id: u32) -> Result<&mut Box<Stream>, TableError>;
-    fn delete_stream(&mut self, id: u32) -> Result<(), TableError>;
+        req: hyper::Request<HyperIncomingBody>,
+    ) -> wasmtime::Result<Resource<HostIncomingRequest>>
+    where
+        Self: Sized,
+    {
+        let (parts, body) = req.into_parts();
+        let body = HostIncomingBody::new(
+            body,
+            // TODO: this needs to be plumbed through
+            std::time::Duration::from_millis(600 * 1000),
+        );
+        let incoming_req = HostIncomingRequest::new(self, parts, Some(body));
+        Ok(self.table().push(incoming_req)?)
+    }
+
+    fn new_response_outparam(
+        &mut self,
+        result: tokio::sync::oneshot::Sender<
+            Result<hyper::Response<HyperOutgoingBody>, types::ErrorCode>,
+        >,
+    ) -> wasmtime::Result<Resource<HostResponseOutparam>> {
+        let id = self.table().push(HostResponseOutparam { result })?;
+        Ok(id)
+    }
+
+    fn send_request(
+        &mut self,
+        request: OutgoingRequest,
+    ) -> wasmtime::Result<Resource<HostFutureIncomingResponse>>
+    where
+        Self: Sized,
+    {
+        default_send_request(self, request)
+    }
+
+    fn is_forbidden_header(&mut self, _name: &HeaderName) -> bool {
+        false
+    }
 }
 
-#[async_trait::async_trait]
-impl TableHttpExt for Table {
-    fn push_request(&mut self, request: Box<dyn HttpRequest>) -> Result<u32, TableError> {
-        self.push(Box::new(request))
-    }
-    fn get_request(&self, id: u32) -> Result<&dyn HttpRequest, TableError> {
-        self.get::<Box<dyn HttpRequest>>(id).map(|f| f.as_ref())
-    }
-    fn get_request_mut(&mut self, id: u32) -> Result<&mut Box<dyn HttpRequest>, TableError> {
-        self.get_mut::<Box<dyn HttpRequest>>(id)
-    }
-    fn delete_request(&mut self, id: u32) -> Result<(), TableError> {
-        self.delete::<Box<dyn HttpRequest>>(id).map(|_old| ())
-    }
+/// Returns `true` when the header is forbidden according to this [`WasiHttpView`] implementation.
+pub(crate) fn is_forbidden_header(view: &mut dyn WasiHttpView, name: &HeaderName) -> bool {
+    static FORBIDDEN_HEADERS: [HeaderName; 9] = [
+        hyper::header::CONNECTION,
+        HeaderName::from_static("keep-alive"),
+        hyper::header::PROXY_AUTHENTICATE,
+        hyper::header::PROXY_AUTHORIZATION,
+        HeaderName::from_static("proxy-connection"),
+        hyper::header::TE,
+        hyper::header::TRANSFER_ENCODING,
+        hyper::header::UPGRADE,
+        HeaderName::from_static("http2-settings"),
+    ];
 
-    fn push_response(&mut self, response: Box<dyn HttpResponse>) -> Result<u32, TableError> {
-        self.push(Box::new(response))
-    }
-    fn get_response(&self, id: u32) -> Result<&dyn HttpResponse, TableError> {
-        self.get::<Box<dyn HttpResponse>>(id).map(|f| f.as_ref())
-    }
-    fn get_response_mut(&mut self, id: u32) -> Result<&mut Box<dyn HttpResponse>, TableError> {
-        self.get_mut::<Box<dyn HttpResponse>>(id)
-    }
-    fn delete_response(&mut self, id: u32) -> Result<(), TableError> {
-        self.delete::<Box<dyn HttpResponse>>(id).map(|_old| ())
-    }
+    FORBIDDEN_HEADERS.contains(name) || view.is_forbidden_header(name)
+}
 
-    fn push_future(&mut self, future: Box<ActiveFuture>) -> Result<u32, TableError> {
-        self.push(Box::new(future))
-    }
-    fn get_future(&self, id: u32) -> Result<&ActiveFuture, TableError> {
-        self.get::<Box<ActiveFuture>>(id).map(|f| f.as_ref())
-    }
-    fn get_future_mut(&mut self, id: u32) -> Result<&mut Box<ActiveFuture>, TableError> {
-        self.get_mut::<Box<ActiveFuture>>(id)
-    }
-    fn delete_future(&mut self, id: u32) -> Result<(), TableError> {
-        self.delete::<Box<ActiveFuture>>(id).map(|_old| ())
-    }
-
-    fn push_fields(&mut self, fields: Box<ActiveFields>) -> Result<u32, TableError> {
-        self.push(Box::new(fields))
-    }
-    fn get_fields(&self, id: u32) -> Result<&ActiveFields, TableError> {
-        self.get::<Box<ActiveFields>>(id).map(|f| f.as_ref())
-    }
-    fn get_fields_mut(&mut self, id: u32) -> Result<&mut Box<ActiveFields>, TableError> {
-        self.get_mut::<Box<ActiveFields>>(id)
-    }
-    fn delete_fields(&mut self, id: u32) -> Result<(), TableError> {
-        self.delete::<Box<ActiveFields>>(id).map(|_old| ())
-    }
-
-    async fn push_stream(
-        &mut self,
-        mut content: Bytes,
-        parent: u32,
-    ) -> Result<(u32, Stream), TableError> {
-        tracing::debug!("preparing http body stream");
-        let (a, b) = tokio::io::duplex(MAX_BUF_SIZE);
-        let (_, write_stream) = tokio::io::split(a);
-        let (read_stream, _) = tokio::io::split(b);
-        let input_stream = AsyncReadStream::new(read_stream);
-        // TODO: more informed budget here
-        let mut output_stream = AsyncWriteStream::new(4096, write_stream);
-
-        while !content.is_empty() {
-            let permit = output_stream
-                .write_ready()
-                .await
-                .map_err(|_| TableError::NotPresent)?;
-
-            let len = content.len().min(permit);
-            let chunk = content.split_to(len);
-
-            output_stream
-                .write(chunk)
-                .map_err(|_| TableError::NotPresent)?;
+/// Removes forbidden headers from a [`hyper::HeaderMap`].
+pub(crate) fn remove_forbidden_headers(
+    view: &mut dyn WasiHttpView,
+    headers: &mut hyper::HeaderMap,
+) {
+    let forbidden_keys = Vec::from_iter(headers.keys().filter_map(|name| {
+        if is_forbidden_header(view, name) {
+            Some(name.clone())
+        } else {
+            None
         }
-        output_stream.flush().map_err(|_| TableError::NotPresent)?;
-        let _readiness = tokio::time::timeout(
-            std::time::Duration::from_millis(10),
-            output_stream.write_ready(),
+    }));
+
+    for name in forbidden_keys {
+        headers.remove(name);
+    }
+}
+
+pub fn default_send_request(
+    view: &mut dyn WasiHttpView,
+    OutgoingRequest {
+        use_tls,
+        authority,
+        request,
+        connect_timeout,
+        first_byte_timeout,
+        between_bytes_timeout,
+    }: OutgoingRequest,
+) -> wasmtime::Result<Resource<HostFutureIncomingResponse>> {
+    let handle = preview2::spawn(async move {
+        let resp = handler(
+            authority,
+            use_tls,
+            connect_timeout,
+            first_byte_timeout,
+            request,
+            between_bytes_timeout,
         )
         .await;
+        Ok(resp)
+    });
 
-        let input_stream = Box::new(input_stream);
-        let output_id = self.push_output_stream(Box::new(output_stream))?;
-        let input_id = self.push_input_stream(input_stream)?;
-        let stream = Stream::new(input_id, output_id, parent);
-        let cloned_stream = stream.clone();
-        let stream_id = self.push(Box::new(Box::new(stream)))?;
-        tracing::trace!(
-            "http body stream details ( id: {:?}, input: {:?}, output: {:?} )",
-            stream_id,
-            input_id,
-            output_id
-        );
-        Ok((stream_id, cloned_stream))
-    }
-    fn get_stream(&self, id: u32) -> Result<&Stream, TableError> {
-        self.get::<Box<Stream>>(id).map(|f| f.as_ref())
-    }
-    fn get_stream_mut(&mut self, id: u32) -> Result<&mut Box<Stream>, TableError> {
-        self.get_mut::<Box<Stream>>(id)
-    }
-    fn delete_stream(&mut self, id: u32) -> Result<(), TableError> {
-        let stream = self.get_stream_mut(id)?;
-        let input_stream = stream.incoming();
-        let output_stream = stream.outgoing();
-        self.delete::<Box<Stream>>(id).map(|_old| ())?;
-        self.delete::<Box<dyn HostInputStream>>(input_stream)
-            .map(|_old| ())?;
-        self.delete::<Box<dyn HostOutputStream>>(output_stream)
-            .map(|_old| ())
+    let fut = view.table().push(HostFutureIncomingResponse::new(handle))?;
+
+    Ok(fut)
+}
+
+async fn handler(
+    authority: String,
+    use_tls: bool,
+    connect_timeout: Duration,
+    first_byte_timeout: Duration,
+    request: http::Request<HyperOutgoingBody>,
+    between_bytes_timeout: Duration,
+) -> Result<IncomingResponseInternal, types::ErrorCode> {
+    let tcp_stream = TcpStream::connect(authority.clone())
+        .await
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::AddrNotAvailable => {
+                dns_error("address not available".to_string(), 0)
+            }
+
+            _ => {
+                if e.to_string()
+                    .starts_with("failed to lookup address information")
+                {
+                    dns_error("address not available".to_string(), 0)
+                } else {
+                    types::ErrorCode::ConnectionRefused
+                }
+            }
+        })?;
+
+    let (mut sender, worker) = if use_tls {
+        #[cfg(any(target_arch = "riscv64", target_arch = "s390x"))]
+        {
+            return Err(crate::bindings::http::types::ErrorCode::InternalError(
+                Some("unsupported architecture for SSL".to_string()),
+            ));
+        }
+
+        #[cfg(not(any(target_arch = "riscv64", target_arch = "s390x")))]
+        {
+            use tokio_rustls::rustls::OwnedTrustAnchor;
+
+            // derived from https://github.com/tokio-rs/tls/blob/master/tokio-rustls/examples/client/src/main.rs
+            let mut root_cert_store = rustls::RootCertStore::empty();
+            root_cert_store.add_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.iter().map(|ta| {
+                OwnedTrustAnchor::from_subject_spki_name_constraints(
+                    ta.subject,
+                    ta.spki,
+                    ta.name_constraints,
+                )
+            }));
+            let config = rustls::ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(root_cert_store)
+                .with_no_client_auth();
+            let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(config));
+            let mut parts = authority.split(":");
+            let host = parts.next().unwrap_or(&authority);
+            let domain = rustls::ServerName::try_from(host).map_err(|e| {
+                tracing::warn!("dns lookup error: {e:?}");
+                dns_error("invalid dns name".to_string(), 0)
+            })?;
+            let stream = connector.connect(domain, tcp_stream).await.map_err(|e| {
+                tracing::warn!("tls protocol error: {e:?}");
+                types::ErrorCode::TlsProtocolError
+            })?;
+            let stream = TokioIo::new(stream);
+
+            let (sender, conn) = timeout(
+                connect_timeout,
+                hyper::client::conn::http1::handshake(stream),
+            )
+            .await
+            .map_err(|_| types::ErrorCode::ConnectionTimeout)?
+            .map_err(hyper_request_error)?;
+
+            let worker = preview2::spawn(async move {
+                match conn.await {
+                    Ok(()) => {}
+                    // TODO: shouldn't throw away this error and ideally should
+                    // surface somewhere.
+                    Err(e) => tracing::warn!("dropping error {e}"),
+                }
+            });
+
+            (sender, worker)
+        }
+    } else {
+        let tcp_stream = TokioIo::new(tcp_stream);
+        let (sender, conn) = timeout(
+            connect_timeout,
+            // TODO: we should plumb the builder through the http context, and use it here
+            hyper::client::conn::http1::handshake(tcp_stream),
+        )
+        .await
+        .map_err(|_| types::ErrorCode::ConnectionTimeout)?
+        .map_err(hyper_request_error)?;
+
+        let worker = preview2::spawn(async move {
+            match conn.await {
+                Ok(()) => {}
+                // TODO: same as above, shouldn't throw this error away.
+                Err(e) => tracing::warn!("dropping error {e}"),
+            }
+        });
+
+        (sender, worker)
+    };
+
+    let resp = timeout(first_byte_timeout, sender.send_request(request))
+        .await
+        .map_err(|_| types::ErrorCode::ConnectionReadTimeout)?
+        .map_err(hyper_request_error)?
+        .map(|body| body.map_err(hyper_request_error).boxed());
+
+    Ok(IncomingResponseInternal {
+        resp,
+        worker: Arc::new(worker),
+        between_bytes_timeout,
+    })
+}
+
+impl From<http::Method> for types::Method {
+    fn from(method: http::Method) -> Self {
+        if method == http::Method::GET {
+            types::Method::Get
+        } else if method == hyper::Method::HEAD {
+            types::Method::Head
+        } else if method == hyper::Method::POST {
+            types::Method::Post
+        } else if method == hyper::Method::PUT {
+            types::Method::Put
+        } else if method == hyper::Method::DELETE {
+            types::Method::Delete
+        } else if method == hyper::Method::CONNECT {
+            types::Method::Connect
+        } else if method == hyper::Method::OPTIONS {
+            types::Method::Options
+        } else if method == hyper::Method::TRACE {
+            types::Method::Trace
+        } else if method == hyper::Method::PATCH {
+            types::Method::Patch
+        } else {
+            types::Method::Other(method.to_string())
+        }
     }
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+impl TryInto<http::Method> for types::Method {
+    type Error = http::method::InvalidMethod;
 
-    #[test]
-    fn instantiate() {
-        WasiHttpCtx::new();
+    fn try_into(self) -> Result<http::Method, Self::Error> {
+        match self {
+            Method::Get => Ok(http::Method::GET),
+            Method::Head => Ok(http::Method::HEAD),
+            Method::Post => Ok(http::Method::POST),
+            Method::Put => Ok(http::Method::PUT),
+            Method::Delete => Ok(http::Method::DELETE),
+            Method::Connect => Ok(http::Method::CONNECT),
+            Method::Options => Ok(http::Method::OPTIONS),
+            Method::Trace => Ok(http::Method::TRACE),
+            Method::Patch => Ok(http::Method::PATCH),
+            Method::Other(s) => http::Method::from_bytes(s.as_bytes()),
+        }
+    }
+}
+
+pub struct HostIncomingRequest {
+    pub(crate) parts: http::request::Parts,
+    pub body: Option<HostIncomingBody>,
+}
+
+impl HostIncomingRequest {
+    pub fn new(
+        view: &mut dyn WasiHttpView,
+        mut parts: http::request::Parts,
+        body: Option<HostIncomingBody>,
+    ) -> Self {
+        remove_forbidden_headers(view, &mut parts.headers);
+        Self { parts, body }
+    }
+}
+
+pub struct HostResponseOutparam {
+    pub result:
+        tokio::sync::oneshot::Sender<Result<hyper::Response<HyperOutgoingBody>, types::ErrorCode>>,
+}
+
+pub struct HostOutgoingRequest {
+    pub method: Method,
+    pub scheme: Option<Scheme>,
+    pub path_with_query: Option<String>,
+    pub authority: Option<String>,
+    pub headers: FieldMap,
+    pub body: Option<HyperOutgoingBody>,
+}
+
+#[derive(Default)]
+pub struct HostRequestOptions {
+    pub connect_timeout: Option<std::time::Duration>,
+    pub first_byte_timeout: Option<std::time::Duration>,
+    pub between_bytes_timeout: Option<std::time::Duration>,
+}
+
+pub struct HostIncomingResponse {
+    pub status: u16,
+    pub headers: FieldMap,
+    pub body: Option<HostIncomingBody>,
+    pub worker: Arc<AbortOnDropJoinHandle<()>>,
+}
+
+pub struct HostOutgoingResponse {
+    pub status: http::StatusCode,
+    pub headers: FieldMap,
+    pub body: Option<HyperOutgoingBody>,
+}
+
+impl TryFrom<HostOutgoingResponse> for hyper::Response<HyperOutgoingBody> {
+    type Error = http::Error;
+
+    fn try_from(
+        resp: HostOutgoingResponse,
+    ) -> Result<hyper::Response<HyperOutgoingBody>, Self::Error> {
+        use http_body_util::Empty;
+
+        let mut builder = hyper::Response::builder().status(resp.status);
+
+        *builder.headers_mut().unwrap() = resp.headers;
+
+        match resp.body {
+            Some(body) => builder.body(body),
+            None => builder.body(
+                Empty::<bytes::Bytes>::new()
+                    .map_err(|_| unreachable!("Infallible error"))
+                    .boxed(),
+            ),
+        }
+    }
+}
+
+pub type FieldMap = hyper::HeaderMap;
+
+pub enum HostFields {
+    Ref {
+        parent: u32,
+
+        // NOTE: there's not failure in the result here because we assume that HostFields will
+        // always be registered as a child of the entry with the `parent` id. This ensures that the
+        // entry will always exist while this `HostFields::Ref` entry exists in the table, thus we
+        // don't need to account for failure when fetching the fields ref from the parent.
+        get_fields: for<'a> fn(elem: &'a mut (dyn Any + 'static)) -> &'a mut FieldMap,
+    },
+    Owned {
+        fields: FieldMap,
+    },
+}
+
+pub struct IncomingResponseInternal {
+    pub resp: hyper::Response<HyperIncomingBody>,
+    pub worker: Arc<AbortOnDropJoinHandle<()>>,
+    pub between_bytes_timeout: std::time::Duration,
+}
+
+type FutureIncomingResponseHandle =
+    AbortOnDropJoinHandle<anyhow::Result<Result<IncomingResponseInternal, types::ErrorCode>>>;
+
+pub enum HostFutureIncomingResponse {
+    Pending(FutureIncomingResponseHandle),
+    Ready(anyhow::Result<Result<IncomingResponseInternal, types::ErrorCode>>),
+    Consumed,
+}
+
+impl HostFutureIncomingResponse {
+    pub fn new(handle: FutureIncomingResponseHandle) -> Self {
+        Self::Pending(handle)
+    }
+
+    pub fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready(_))
+    }
+
+    pub fn unwrap_ready(
+        self,
+    ) -> anyhow::Result<Result<IncomingResponseInternal, types::ErrorCode>> {
+        match self {
+            Self::Ready(res) => res,
+            Self::Pending(_) | Self::Consumed => {
+                panic!("unwrap_ready called on a pending HostFutureIncomingResponse")
+            }
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Subscribe for HostFutureIncomingResponse {
+    async fn ready(&mut self) {
+        if let Self::Pending(handle) = self {
+            *self = Self::Ready(handle.await);
+        }
     }
 }

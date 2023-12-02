@@ -1,5 +1,6 @@
 use anyhow::Result;
 use wasmtime::*;
+use wasmtime_runtime::MpkEnabled;
 
 const WASM_PAGE_SIZE: usize = wasmtime_environ::WASM_PAGE_SIZE as usize;
 
@@ -355,7 +356,8 @@ fn test_pooling_allocator_initial_limits_exceeded() -> Result<()> {
     let mut pool = crate::small_pool_config();
     pool.total_memories(2)
         .max_memories_per_module(2)
-        .memory_pages(5);
+        .memory_pages(5)
+        .memory_protection_keys(MpkEnabled::Disable);
     let mut config = Config::new();
     config.wasm_multi_memory(true);
     config.allocation_strategy(InstanceAllocationStrategy::Pooling(pool));
@@ -407,8 +409,7 @@ impl ResourceLimiter for MemoryContext {
         // Check if the desired exceeds a maximum (either from Wasm or from the host)
         assert!(desired < maximum.unwrap_or(usize::MAX));
 
-        assert_eq!(current as usize, self.wasm_memory_used);
-        let desired = desired as usize;
+        assert_eq!(current, self.wasm_memory_used);
 
         if desired + self.host_memory_used > self.memory_limit {
             self.limit_exceeded = true;
@@ -522,8 +523,7 @@ impl ResourceLimiterAsync for MemoryContext {
         // Check if the desired exceeds a maximum (either from Wasm or from the host)
         assert!(desired < maximum.unwrap_or(usize::MAX));
 
-        assert_eq!(current as usize, self.wasm_memory_used);
-        let desired = desired as usize;
+        assert_eq!(current, self.wasm_memory_used);
 
         if desired + self.host_memory_used > self.memory_limit {
             self.limit_exceeded = true;

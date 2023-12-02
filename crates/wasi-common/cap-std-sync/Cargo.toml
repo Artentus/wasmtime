@@ -11,6 +11,9 @@ readme = "README.md"
 edition.workspace = true
 include = ["src/**/*", "README.md", "LICENSE" ]
 
+[lints]
+workspace = true
+
 [dependencies]
 wasi-common = { workspace = true }
 async-trait = { workspace = true }
@@ -23,7 +26,6 @@ fs-set-times = { workspace = true }
 system-interface = { workspace = true, features = ["cap_std_impls"] }
 tracing = { workspace = true }
 io-lifetimes = { workspace = true }
-is-terminal = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 rustix = { workspace = true, features = ["fs", "event"] }

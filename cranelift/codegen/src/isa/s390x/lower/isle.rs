@@ -16,10 +16,10 @@ use crate::machinst::isle::*;
 use crate::machinst::{MachLabel, Reg};
 use crate::{
     ir::{
-        condcodes::*, immediates::*, types::*, ArgumentPurpose, AtomicRmwOp, BlockCall, Endianness,
-        Inst, InstructionData, KnownSymbol, LibCall, MemFlags, Opcode, TrapCode, Value, ValueList,
+        condcodes::*, immediates::*, types::*, ArgumentExtension, ArgumentPurpose, AtomicRmwOp,
+        BlockCall, Endianness, Inst, InstructionData, KnownSymbol, LibCall, MemFlags, Opcode,
+        TrapCode, Value, ValueList,
     },
-    isa::unwind::UnwindInst,
     isa::CallConv,
     machinst::abi::ABIMachineSpec,
     machinst::{
@@ -735,16 +735,6 @@ impl generated_code::Context for IsleContext<'_, '_, MInst, S390xBackend> {
         } else {
             None
         }
-    }
-
-    #[inline]
-    fn vec_length_minus1(&mut self, vec: &VecMachLabel) -> u32 {
-        u32::try_from(vec.len()).unwrap() - 1
-    }
-
-    #[inline]
-    fn vec_element(&mut self, vec: &VecMachLabel, index: u8) -> MachLabel {
-        vec[usize::from(index)]
     }
 
     #[inline]

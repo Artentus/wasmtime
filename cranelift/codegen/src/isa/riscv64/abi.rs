@@ -318,12 +318,29 @@ impl ABIMachineSpec for Riscv64MachineDeps {
 
     fn gen_sp_reg_adjust(amount: i32) -> SmallInstVec<Inst> {
         let mut insts = SmallVec::new();
+
         if amount == 0 {
             return insts;
         }
-        insts.push(Inst::AdjustSp {
-            amount: amount as i64,
-        });
+
+        if let Some(imm) = Imm12::maybe_from_i64(amount as i64) {
+            insts.push(Inst::AluRRImm12 {
+                alu_op: AluOPRRI::Addi,
+                rd: writable_stack_reg(),
+                rs: stack_reg(),
+                imm12: imm,
+            })
+        } else {
+            let tmp = writable_spilltmp_reg();
+            insts.extend(Inst::load_constant_u64(tmp, amount as i64 as u64));
+            insts.push(Inst::AluRRR {
+                alu_op: AluOPRRR::Add,
+                rd: writable_stack_reg(),
+                rs1: stack_reg(),
+                rs2: tmp.to_reg(),
+            });
+        }
+
         insts
     }
 
@@ -346,7 +363,7 @@ impl ABIMachineSpec for Riscv64MachineDeps {
             // sd   ra,8(sp)     ;; save ra.
             // sd   fp,0(sp)     ;; store old fp.
             // mv   fp,sp        ;; set fp to sp.
-            insts.push(Inst::AdjustSp { amount: -16 });
+            insts.extend(Self::gen_sp_reg_adjust(-16));
             insts.push(Self::gen_store_stack(
                 StackAMode::SPOffset(8, I64),
                 link_reg(),
@@ -394,7 +411,7 @@ impl ABIMachineSpec for Riscv64MachineDeps {
                 writable_fp_reg(),
                 I64,
             ));
-            insts.push(Inst::AdjustSp { amount: 16 });
+            insts.extend(Self::gen_sp_reg_adjust(16));
         }
 
         if call_conv == isa::CallConv::Tail && frame_layout.stack_args_size > 0 {
@@ -472,9 +489,8 @@ impl ABIMachineSpec for Riscv64MachineDeps {
                 ));
                 cur_offset += 8
             }
-            insts.push(Inst::AdjustSp {
-                amount: -(stack_size as i64),
-            });
+
+            insts.extend(Self::gen_sp_reg_adjust(-(stack_size as i32)));
         }
         insts
     }
@@ -487,9 +503,7 @@ impl ABIMachineSpec for Riscv64MachineDeps {
         let mut insts = SmallVec::new();
         let stack_size = frame_layout.fixed_frame_storage_size + frame_layout.clobber_size;
         if stack_size > 0 {
-            insts.push(Inst::AdjustSp {
-                amount: stack_size as i64,
-            });
+            insts.extend(Self::gen_sp_reg_adjust(stack_size as i32));
         }
         let mut cur_offset = 8;
         for reg in &frame_layout.clobbered_callee_saves {
@@ -704,10 +718,20 @@ impl ABIMachineSpec for Riscv64MachineDeps {
         // Number of probes that we need to perform
         let probe_count = align_to(frame_size, guard_size) / guard_size;
 
+        // Must be a caller-saved register that is not an argument.
+        let tmp = match call_conv {
+            isa::CallConv::Tail => Writable::from_reg(x_reg(1)),
+            _ => Writable::from_reg(x_reg(28)), // t3
+        };
+
         if probe_count <= PROBE_MAX_UNROLL {
-            Self::gen_probestack_unroll(insts, guard_size, probe_count)
+            Self::gen_probestack_unroll(insts, tmp, guard_size, probe_count)
         } else {
-            Self::gen_probestack_loop(insts, call_conv, guard_size, probe_count)
+            insts.push(Inst::StackProbeLoop {
+                guard_size,
+                probe_count,
+                tmp,
+            });
         }
     }
 }
@@ -1038,33 +1062,41 @@ fn create_reg_enviroment() -> MachineEnv {
 }
 
 impl Riscv64MachineDeps {
-    fn gen_probestack_unroll(insts: &mut SmallInstVec<Inst>, guard_size: u32, probe_count: u32) {
-        insts.reserve(probe_count as usize);
-        for i in 0..probe_count {
-            let offset = (guard_size * (i + 1)) as i64;
+    fn gen_probestack_unroll(
+        insts: &mut SmallInstVec<Inst>,
+        tmp: Writable<Reg>,
+        guard_size: u32,
+        probe_count: u32,
+    ) {
+        // When manually unrolling adjust the stack pointer and then write a zero
+        // to the stack at that offset.
+        //
+        // We do this because valgrind expects us to never write beyond the stack
+        // pointer and associated redzone.
+        // See: https://github.com/bytecodealliance/wasmtime/issues/7454
+
+        // Store the adjust amount in a register upfront, so we don't have to
+        // reload it for each probe. It's worth loading this as a negative and
+        // using an `add` instruction since we have compressed versions of `add`
+        // but not the `sub` instruction.
+        insts.extend(Inst::load_constant_u64(tmp, (-(guard_size as i64)) as u64));
+
+        for _ in 0..probe_count {
+            insts.push(Inst::AluRRR {
+                alu_op: AluOPRRR::Add,
+                rd: writable_stack_reg(),
+                rs1: stack_reg(),
+                rs2: tmp.to_reg(),
+            });
+
             insts.push(Self::gen_store_stack(
-                StackAMode::SPOffset(-offset, I8),
+                StackAMode::SPOffset(0, I8),
                 zero_reg(),
                 I32,
             ));
         }
-    }
 
-    fn gen_probestack_loop(
-        insts: &mut SmallInstVec<Inst>,
-        call_conv: isa::CallConv,
-        guard_size: u32,
-        probe_count: u32,
-    ) {
-        // Must be a caller-saved register that is not an argument.
-        let tmp = match call_conv {
-            isa::CallConv::Tail => Writable::from_reg(x_reg(1)),
-            _ => Writable::from_reg(x_reg(28)), // t3
-        };
-        insts.push(Inst::StackProbeLoop {
-            guard_size,
-            probe_count,
-            tmp,
-        });
+        // Restore the stack pointer to its original value
+        insts.extend(Self::gen_sp_reg_adjust((guard_size * probe_count) as i32));
     }
 }

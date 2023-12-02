@@ -3,9 +3,9 @@
 mod async_functions;
 mod call_hook;
 mod cli_tests;
+mod code_too_large;
 mod component_model;
 mod coredump;
-mod custom_signal_handler;
 mod debug;
 mod epoch_interruption;
 mod externals;
@@ -29,6 +29,7 @@ mod module_serialize;
 mod name;
 mod pooling_allocator;
 mod relocs;
+mod stack_creator;
 mod stack_overflow;
 mod store;
 mod table;
@@ -90,6 +91,12 @@ pub(crate) fn small_pool_config() -> wasmtime::PoolingAllocationConfig {
     config.memory_pages(1);
     config.total_tables(1);
     config.table_elements(10);
+
+    // When testing, we may choose to start with MPK force-enabled to ensure
+    // we use that functionality.
+    if std::env::var("WASMTIME_TEST_FORCE_MPK").is_ok() {
+        config.memory_protection_keys(wasmtime_runtime::MpkEnabled::Enable);
+    }
 
     #[cfg(feature = "async")]
     config.total_stacks(1);

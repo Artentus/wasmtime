@@ -14,15 +14,23 @@ pub struct TypedReg {
 }
 
 impl TypedReg {
-    /// Create a new TypedReg.
+    /// Create a new [`TypedReg`].
     pub fn new(ty: WasmType, reg: Reg) -> Self {
         Self { ty, reg }
     }
 
-    /// Create an i64 TypedReg.
+    /// Create an i64 [`TypedReg`].
     pub fn i64(reg: Reg) -> Self {
         Self {
             ty: WasmType::I64,
+            reg,
+        }
+    }
+
+    /// Create an i32 [`TypedReg`].
+    pub fn i32(reg: Reg) -> Self {
+        Self {
+            ty: WasmType::I32,
             reg,
         }
     }
@@ -89,6 +97,13 @@ impl From<Memory> for Val {
     }
 }
 
+impl TryFrom<u32> for Val {
+    type Error = anyhow::Error;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        i32::try_from(value).map(Val::i32).map_err(Into::into)
+    }
+}
+
 impl Val {
     /// Create a new I32 constant value.
     pub fn i32(v: i32) -> Self {
@@ -140,11 +155,27 @@ impl Val {
         }
     }
 
+    /// Check whether the value is a constant.
+    pub fn is_const(&self) -> bool {
+        match *self {
+            Val::I32(_) | Val::I64(_) | Val::F32(_) | Val::F64(_) => true,
+            _ => false,
+        }
+    }
+
+    /// Check whether the value is local with a particular index.
+    pub fn is_local_at_index(&self, index: u32) -> bool {
+        match *self {
+            Self::Local(Local { index: i, .. }) if i == index => true,
+            _ => false,
+        }
+    }
+
     /// Get the register representation of the value.
     ///
     /// # Panics
     /// This method will panic if the value is not a register.
-    pub fn get_reg(&self) -> TypedReg {
+    pub fn unwrap_reg(&self) -> TypedReg {
         match self {
             Self::Reg(tr) => *tr,
             v => panic!("expected value {:?} to be a register", v),
@@ -155,7 +186,7 @@ impl Val {
     ///
     /// # Panics
     /// This method will panic if the value is not an i32.
-    pub fn get_i32(&self) -> i32 {
+    pub fn unwrap_i32(&self) -> i32 {
         match self {
             Self::I32(v) => *v,
             v => panic!("expected value {:?} to be i32", v),
@@ -166,10 +197,18 @@ impl Val {
     ///
     /// # Panics
     /// This method will panic if the value is not an i64.
-    pub fn get_i64(&self) -> i64 {
+    pub fn unwrap_i64(&self) -> i64 {
         match self {
             Self::I64(v) => *v,
             v => panic!("expected value {:?} to be i64", v),
+        }
+    }
+
+    /// Returns the underlying memory value if it is one, panics otherwise.
+    pub fn unwrap_mem(&self) -> Memory {
+        match self {
+            Self::Memory(m) => *m,
+            v => panic!("expected value {:?} to be a Memory", v),
         }
     }
 
@@ -217,9 +256,39 @@ impl Stack {
         }
     }
 
-    /// Insert a new value at the specified index.
-    pub fn insert(&mut self, at: usize, val: Val) {
-        self.inner.insert(at, val);
+    /// Returns true if the stack contains a local with the provided index
+    /// except if the only time the local appears is the top element.
+    pub fn contains_latent_local(&self, index: u32) -> bool {
+        self.inner
+            .iter()
+            // Iterate top-to-bottom so we can skip the top element and stop
+            // when we see a memory element.
+            .rev()
+            // The local is not latent if it's the top element because the top
+            // element will be popped next which materializes the local.
+            .skip(1)
+            // Stop when we see a memory element because that marks where we
+            // spilled up to so there will not be any locals past this point.
+            .take_while(|v| !v.is_mem())
+            .any(|v| v.is_local_at_index(index))
+    }
+
+    /// Extend the stack with the given elements.
+    pub fn extend(&mut self, values: impl IntoIterator<Item = Val>) {
+        self.inner.extend(values);
+    }
+
+    /// Inserts many values at the given index.
+    pub fn insert_many(&mut self, at: usize, values: impl IntoIterator<Item = Val>) {
+        debug_assert!(at <= self.len());
+        // If last, simply extend.
+        if at == self.inner.len() {
+            self.inner.extend(values);
+        } else {
+            let mut tail = self.inner.split_off(at);
+            self.inner.extend(values);
+            self.inner.append(&mut tail);
+        }
     }
 
     /// Get the length of the stack.
@@ -247,6 +316,23 @@ impl Stack {
         self.inner.range(partition..)
     }
 
+    /// Duplicates the top `n` elements of the stack.
+    // Will be needed for control flow, it's just not integrated yet.
+    #[allow(dead_code)]
+    pub fn dup(&mut self, n: usize) {
+        let len = self.len();
+        assert!(n <= len);
+        let partition = len - n;
+
+        if n > 0 {
+            for e in partition..len {
+                if let Some(v) = self.inner.get(e) {
+                    self.push(*v)
+                }
+            }
+        }
+    }
+
     /// Pops the top element of the stack, if any.
     pub fn pop(&mut self) -> Option<Val> {
         self.inner.pop_back()
@@ -256,7 +342,7 @@ impl Stack {
     /// returns `None` otherwise.
     pub fn pop_i32_const(&mut self) -> Option<i32> {
         match self.peek() {
-            Some(v) => v.is_i32_const().then(|| self.pop().unwrap().get_i32()),
+            Some(v) => v.is_i32_const().then(|| self.pop().unwrap().unwrap_i32()),
             _ => None,
         }
     }
@@ -265,7 +351,7 @@ impl Stack {
     /// returns `None` otherwise.
     pub fn pop_i64_const(&mut self) -> Option<i64> {
         match self.peek() {
-            Some(v) => v.is_i64_const().then(|| self.pop().unwrap().get_i64()),
+            Some(v) => v.is_i64_const().then(|| self.pop().unwrap().unwrap_i64()),
             _ => None,
         }
     }
@@ -274,7 +360,7 @@ impl Stack {
     /// returns `None` otherwise.
     pub fn pop_reg(&mut self) -> Option<TypedReg> {
         match self.peek() {
-            Some(v) => v.is_reg().then(|| self.pop().unwrap().get_reg()),
+            Some(v) => v.is_reg().then(|| self.pop().unwrap().unwrap_reg()),
             _ => None,
         }
     }
@@ -284,7 +370,7 @@ impl Stack {
     pub fn pop_named_reg(&mut self, reg: Reg) -> Option<TypedReg> {
         match self.peek() {
             Some(v) => {
-                (v.is_reg() && v.get_reg().reg == reg).then(|| self.pop().unwrap().get_reg())
+                (v.is_reg() && v.unwrap_reg().reg == reg).then(|| self.pop().unwrap().unwrap_reg())
             }
             _ => None,
         }
@@ -293,6 +379,18 @@ impl Stack {
     /// Get a mutable reference to the inner stack representation.
     pub fn inner_mut(&mut self) -> &mut VecDeque<Val> {
         &mut self.inner
+    }
+
+    /// Calculates the size of, in bytes, of the top n [Memory] entries
+    /// in the value stack.
+    pub fn sizeof(&self, top: usize) -> u32 {
+        self.peekn(top).fold(0, |acc, v| {
+            if v.is_mem() {
+                acc + v.unwrap_mem().slot.size
+            } else {
+                acc
+            }
+        })
     }
 }
 

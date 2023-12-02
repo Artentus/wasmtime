@@ -1,18 +1,30 @@
 use anyhow::Result;
 use object::write::{Object, SymbolId};
 use std::any::Any;
+use std::mem;
 use std::sync::Mutex;
 use wasmparser::FuncValidatorAllocations;
 use wasmtime_cranelift_shared::{CompiledFunction, ModuleTextBuilder};
 use wasmtime_environ::{
     CompileError, DefinedFuncIndex, FilePos, FuncIndex, FunctionBodyData, FunctionLoc,
-    ModuleTranslation, ModuleTypes, PrimaryMap, TrapEncodingBuilder, WasmFunctionInfo,
+    ModuleTranslation, ModuleTypesBuilder, PrimaryMap, TrapEncodingBuilder, VMOffsets,
+    WasmFunctionInfo,
 };
-use winch_codegen::{TargetIsa, TrampolineKind};
+use winch_codegen::{BuiltinFunctions, TargetIsa, TrampolineKind};
+
+/// Function compilation context.
+/// This struct holds information that can be shared globally across
+/// all function compilations.
+struct CompilationContext {
+    /// Validator allocations.
+    allocations: FuncValidatorAllocations,
+    /// Builtin functions available to JIT code.
+    builtins: BuiltinFunctions,
+}
 
 pub(crate) struct Compiler {
     isa: Box<dyn TargetIsa>,
-    allocations: Mutex<Vec<FuncValidatorAllocations>>,
+    contexts: Mutex<Vec<CompilationContext>>,
 }
 
 /// The compiled function environment.
@@ -30,20 +42,26 @@ impl Compiler {
     pub fn new(isa: Box<dyn TargetIsa>) -> Self {
         Self {
             isa,
-            allocations: Mutex::new(Vec::new()),
+            contexts: Mutex::new(Vec::new()),
         }
     }
 
-    fn take_allocations(&self) -> FuncValidatorAllocations {
-        self.allocations
-            .lock()
-            .unwrap()
-            .pop()
-            .unwrap_or_else(Default::default)
+    /// Get a compilation context or create a new one if none available.
+    fn get_context(&self, translation: &ModuleTranslation) -> CompilationContext {
+        self.contexts.lock().unwrap().pop().unwrap_or_else(|| {
+            let pointer_size = self.isa.pointer_bytes();
+            let vmoffsets = VMOffsets::new(pointer_size, &translation.module);
+            CompilationContext {
+                allocations: Default::default(),
+                builtins: BuiltinFunctions::new(&vmoffsets, self.isa.wasmtime_call_conv()),
+            }
+        })
     }
 
-    fn save_allocations(&self, allocs: FuncValidatorAllocations) {
-        self.allocations.lock().unwrap().push(allocs)
+    /// Save a compilation context.
+    fn save_context(&self, mut context: CompilationContext, allocs: FuncValidatorAllocations) {
+        context.allocations = allocs;
+        self.contexts.lock().unwrap().push(context);
     }
 }
 
@@ -53,7 +71,7 @@ impl wasmtime_environ::Compiler for Compiler {
         translation: &ModuleTranslation<'_>,
         index: DefinedFuncIndex,
         data: FunctionBodyData<'_>,
-        types: &ModuleTypes,
+        types: &ModuleTypesBuilder,
     ) -> Result<(WasmFunctionInfo, Box<dyn Any + Send>), CompileError> {
         let index = translation.module.func_index(index);
         let sig = translation.module.functions[index].signature;
@@ -65,12 +83,20 @@ impl wasmtime_environ::Compiler for Compiler {
                 .try_into()
                 .unwrap(),
         );
-        let mut validator = validator.into_validator(self.take_allocations());
+        let mut context = self.get_context(translation);
+        let mut validator = validator.into_validator(mem::take(&mut context.allocations));
         let buffer = self
             .isa
-            .compile_function(ty, &body, &translation, &mut validator)
+            .compile_function(
+                ty,
+                &body,
+                translation,
+                types,
+                &mut context.builtins,
+                &mut validator,
+            )
             .map_err(|e| CompileError::Codegen(format!("{e:?}")));
-        self.save_allocations(validator.into_allocations());
+        self.save_context(context, validator.into_allocations());
         let buffer = buffer?;
         let compiled_function =
             CompiledFunction::new(buffer, CompiledFuncEnv {}, self.isa.function_alignment());
@@ -87,7 +113,7 @@ impl wasmtime_environ::Compiler for Compiler {
     fn compile_array_to_wasm_trampoline(
         &self,
         translation: &ModuleTranslation<'_>,
-        types: &ModuleTypes,
+        types: &ModuleTypesBuilder,
         index: DefinedFuncIndex,
     ) -> Result<Box<dyn Any + Send>, CompileError> {
         let func_index = translation.module.func_index(index);
@@ -106,7 +132,7 @@ impl wasmtime_environ::Compiler for Compiler {
     fn compile_native_to_wasm_trampoline(
         &self,
         translation: &ModuleTranslation<'_>,
-        types: &ModuleTypes,
+        types: &ModuleTypesBuilder,
         index: DefinedFuncIndex,
     ) -> Result<Box<dyn Any + Send>, CompileError> {
         let func_index = translation.module.func_index(index);
@@ -185,11 +211,11 @@ impl wasmtime_environ::Compiler for Compiler {
         self.isa.triple()
     }
 
-    fn flags(&self) -> std::collections::BTreeMap<String, wasmtime_environ::FlagValue> {
+    fn flags(&self) -> Vec<(&'static str, wasmtime_environ::FlagValue<'static>)> {
         wasmtime_cranelift_shared::clif_flags_to_wasmtime(self.isa.flags().iter())
     }
 
-    fn isa_flags(&self) -> std::collections::BTreeMap<String, wasmtime_environ::FlagValue> {
+    fn isa_flags(&self) -> Vec<(&'static str, wasmtime_environ::FlagValue<'static>)> {
         wasmtime_cranelift_shared::clif_flags_to_wasmtime(self.isa.isa_flags())
     }
 

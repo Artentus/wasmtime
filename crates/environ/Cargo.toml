@@ -10,6 +10,9 @@ categories = ["wasm"]
 keywords = ["webassembly", "wasm"]
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow = { workspace = true }
 cranelift-entity = { workspace = true }
@@ -28,8 +31,7 @@ wasmprinter = { workspace = true, optional = true }
 wasmtime-component-util = { workspace = true, optional = true }
 
 [dev-dependencies]
-atty = "0.2.14"
-clap = { workspace = true }
+clap = { workspace = true, features = ['default'] }
 env_logger = { workspace = true }
 wat = { workspace = true }
 

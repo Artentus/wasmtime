@@ -1,7 +1,7 @@
 //! Runtime library support for Wasmtime.
 
-#![deny(missing_docs, trivial_numeric_casts, unused_extern_crates)]
-#![warn(unused_import_braces)]
+#![deny(missing_docs)]
+#![warn(clippy::cast_sign_loss)]
 
 use anyhow::{Error, Result};
 use std::fmt;
@@ -29,8 +29,10 @@ mod table;
 mod traphandlers;
 mod vmcontext;
 
+#[cfg(feature = "debug-builtins")]
 pub mod debug_builtins;
 pub mod libcalls;
+pub mod mpk;
 
 pub use wasmtime_jit_debug::gdb_jit_int::GdbJitImageRegistration;
 
@@ -50,6 +52,7 @@ pub use crate::memory::{
 };
 pub use crate::mmap::Mmap;
 pub use crate::mmap_vec::MmapVec;
+pub use crate::mpk::MpkEnabled;
 pub use crate::store_box::*;
 pub use crate::table::{Table, TableElement};
 pub use crate::traphandlers::*;
@@ -182,8 +185,8 @@ pub trait ModuleRuntimeInfo: Send + Sync + 'static {
     /// not callable from outside the Wasm module itself.
     fn array_to_wasm_trampoline(&self, index: DefinedFuncIndex) -> Option<VMArrayCallFunction>;
 
-    /// Return the addres, in memory, of the trampoline that allows Wasm to call
-    /// a native function of the given signature.
+    /// Return the address, in memory, of the trampoline that allows Wasm to
+    /// call a native function of the given signature.
     fn wasm_to_native_trampoline(
         &self,
         signature: VMSharedSignatureIndex,
@@ -238,7 +241,7 @@ pub fn page_size() -> usize {
 
     #[cfg(unix)]
     fn get_page_size() -> usize {
-        unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
+        unsafe { libc::sysconf(libc::_SC_PAGESIZE).try_into().unwrap() }
     }
 }
 

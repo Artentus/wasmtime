@@ -187,7 +187,6 @@ impl Component {
             Translator::new(tunables, &mut validator, &mut types, &scope)
                 .translate(binary)
                 .context("failed to parse WebAssembly module")?;
-        let types = types.finish();
 
         let compile_inputs = CompileInputs::for_component(
             &types,
@@ -198,6 +197,7 @@ impl Component {
             }),
         );
         let unlinked_compile_outputs = compile_inputs.compile(&engine)?;
+        let types = types.finish();
         let (compiled_funcs, function_indices) = unlinked_compile_outputs.pre_link();
 
         let mut object = compiler.object(ObjectKind::Component)?;
@@ -206,8 +206,7 @@ impl Component {
 
         let (mut object, compilation_artifacts) = function_indices.link_and_append_code(
             object,
-            &engine.config().tunables,
-            compiler,
+            engine,
             compiled_funcs,
             module_translations,
         )?;
@@ -470,6 +469,37 @@ impl ComponentRuntimeInfo for ComponentInner {
             // The only creator of a `Component` is itself which uses the other
             // variant, so this shouldn't be possible.
             crate::code::Types::Module(_) => unreachable!(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::component::Component;
+    use crate::{Config, Engine};
+    use wasmtime_environ::MemoryInitialization;
+
+    #[test]
+    fn cow_on_by_default() {
+        let mut config = Config::new();
+        config.wasm_component_model(true);
+        let engine = Engine::new(&config).unwrap();
+        let component = Component::new(
+            &engine,
+            r#"
+                (component
+                    (core module
+                        (memory 1)
+                        (data (i32.const 100) "abcd")
+                    )
+                )
+            "#,
+        )
+        .unwrap();
+
+        for (_, module) in component.inner.static_modules.iter() {
+            let init = &module.env_module().memory_initialization;
+            assert!(matches!(init, MemoryInitialization::Static { .. }));
         }
     }
 }

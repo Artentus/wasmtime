@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::collections::{BTreeSet, HashMap};
+use wasmtime::component::Resource;
 
 #[derive(thiserror::Error, Debug)]
 pub enum TableError {
@@ -22,8 +23,30 @@ pub enum TableError {
 /// up. Right now it is just an approximation.
 #[derive(Debug)]
 pub struct Table {
-    map: HashMap<u32, TableEntry>,
-    next_key: u32,
+    entries: Vec<Entry>,
+    free_head: Option<usize>,
+}
+
+#[derive(Debug)]
+enum Entry {
+    Free { next: Option<usize> },
+    Occupied { entry: TableEntry },
+}
+
+impl Entry {
+    pub fn occupied(&self) -> Option<&TableEntry> {
+        match self {
+            Self::Occupied { entry } => Some(entry),
+            Self::Free { .. } => None,
+        }
+    }
+
+    pub fn occupied_mut(&mut self) -> Option<&mut TableEntry> {
+        match self {
+            Self::Occupied { entry } => Some(entry),
+            Self::Free { .. } => None,
+        }
+    }
 }
 
 /// This structure tracks parent and child relationships for a given table entry.
@@ -63,48 +86,93 @@ impl TableEntry {
     }
 }
 
-/// Like [`std::collections::hash_map::OccupiedEntry`], with a subset of
-/// methods available in order to uphold [`Table`] invariants.
-pub struct OccupiedEntry<'a> {
-    table: &'a mut Table,
-    index: u32,
-}
-impl<'a> OccupiedEntry<'a> {
-    /// Get the dynamically-typed reference to the resource.
-    pub fn get(&self) -> &(dyn Any + Send + Sync + 'static) {
-        self.table.map.get(&self.index).unwrap().entry.as_ref()
-    }
-    /// Get the dynamically-typed mutable reference to the resource.
-    pub fn get_mut(&mut self) -> &mut (dyn Any + Send + Sync + 'static) {
-        self.table.map.get_mut(&self.index).unwrap().entry.as_mut()
-    }
-    /// Remove the resource from the table, returning the contents of the
-    /// resource.
-    /// May fail with [`TableError::HasChildren`] if the entry has any
-    /// children, see [`Table::push_child`].
-    /// If this method fails, the [`OccupiedEntry`] is consumed, but the
-    /// resource remains in the table.
-    pub fn remove_entry(self) -> Result<Box<dyn Any + Send + Sync>, TableError> {
-        self.table.delete_entry(self.index).map(|e| e.entry)
-    }
-}
-
 impl Table {
     /// Create an empty table
     pub fn new() -> Self {
         Table {
-            map: HashMap::new(),
-            // 0, 1 and 2 are formerly (preview 1) for stdio. To prevent users from assuming these
-            // indicies are still valid ways to access stdio, they are deliberately left empty.
-            // Once we have a full implementation of resources, this confusion should hopefully be
-            // impossible :)
-            next_key: 3,
+            entries: Vec::new(),
+            free_head: None,
         }
     }
 
-    /// Insert a resource at the next available index.
-    pub fn push(&mut self, entry: Box<dyn Any + Send + Sync>) -> Result<u32, TableError> {
-        self.push_(TableEntry::new(entry, None))
+    /// Create an empty table with at least the specified capacity.
+    pub fn with_capacity(capacity: usize) -> Self {
+        Table {
+            entries: Vec::with_capacity(capacity),
+            free_head: None,
+        }
+    }
+
+    /// Inserts a new value `T` into this table, returning a corresponding
+    /// `Resource<T>` which can be used to refer to it after it was inserted.
+    pub fn push<T>(&mut self, entry: T) -> Result<Resource<T>, TableError>
+    where
+        T: Send + Sync + 'static,
+    {
+        let idx = self.push_(TableEntry::new(Box::new(entry), None))?;
+        Ok(Resource::new_own(idx))
+    }
+
+    /// Pop an index off of the free list, if it's not empty.
+    fn pop_free_list(&mut self) -> Option<usize> {
+        if let Some(ix) = self.free_head {
+            // Advance free_head to the next entry if one is available.
+            match &self.entries[ix] {
+                Entry::Free { next } => self.free_head = *next,
+                Entry::Occupied { .. } => unreachable!(),
+            }
+            Some(ix)
+        } else {
+            None
+        }
+    }
+
+    /// Free an entry in the table, returning its [`TableEntry`]. Add the index to the free list.
+    fn free_entry(&mut self, ix: usize) -> TableEntry {
+        let entry = match std::mem::replace(
+            &mut self.entries[ix],
+            Entry::Free {
+                next: self.free_head,
+            },
+        ) {
+            Entry::Occupied { entry } => entry,
+            Entry::Free { .. } => unreachable!(),
+        };
+
+        self.free_head = Some(ix);
+
+        entry
+    }
+
+    /// Push a new entry into the table, returning its handle. This will prefer to use free entries
+    /// if they exist, falling back on pushing new entries onto the end of the table.
+    fn push_(&mut self, e: TableEntry) -> Result<u32, TableError> {
+        if let Some(free) = self.pop_free_list() {
+            self.entries[free] = Entry::Occupied { entry: e };
+            Ok(free as u32)
+        } else {
+            let ix = self
+                .entries
+                .len()
+                .try_into()
+                .map_err(|_| TableError::Full)?;
+            self.entries.push(Entry::Occupied { entry: e });
+            Ok(ix)
+        }
+    }
+
+    fn occupied(&self, key: u32) -> Result<&TableEntry, TableError> {
+        self.entries
+            .get(key as usize)
+            .and_then(Entry::occupied)
+            .ok_or(TableError::NotPresent)
+    }
+
+    fn occupied_mut(&mut self, key: u32) -> Result<&mut TableEntry, TableError> {
+        self.entries
+            .get_mut(key as usize)
+            .and_then(Entry::occupied_mut)
+            .ok_or(TableError::NotPresent)
     }
 
     /// Insert a resource at the next available index, and track that it has a
@@ -112,8 +180,7 @@ impl Table {
     ///
     /// The parent must exist to create a child. All children resources must
     /// be destroyed before a parent can be destroyed - otherwise [`Table::delete`]
-    /// or [`OccupiedEntry::remove_entry`] will fail with
-    /// [`TableError::HasChildren`].
+    /// will fail with [`TableError::HasChildren`].
     ///
     /// Parent-child relationships are tracked inside the table to ensure that
     /// a parent resource is not deleted while it has live children. This
@@ -126,144 +193,78 @@ impl Table {
     /// Parent-child relationships may not be modified once created. There
     /// is no way to observe these relationships through the [`Table`] methods
     /// except for erroring on deletion, or the [`std::fmt::Debug`] impl.
-    pub fn push_child(
+    pub fn push_child<T, U>(
         &mut self,
-        entry: Box<dyn Any + Send + Sync>,
-        parent: u32,
-    ) -> Result<u32, TableError> {
-        if !self.contains_key(parent) {
-            return Err(TableError::NotPresent);
-        }
-        let child = self.push_(TableEntry::new(entry, Some(parent)))?;
-        self.map
-            .get_mut(&parent)
-            .expect("parent existence assured above")
-            .add_child(child);
-        Ok(child)
+        entry: T,
+        parent: &Resource<U>,
+    ) -> Result<Resource<T>, TableError>
+    where
+        T: Send + Sync + 'static,
+        U: 'static,
+    {
+        let parent = parent.rep();
+        self.occupied(parent)?;
+        let child = self.push_(TableEntry::new(Box::new(entry), Some(parent)))?;
+        self.occupied_mut(parent)?.add_child(child);
+        Ok(Resource::new_own(child))
     }
 
-    fn push_(&mut self, e: TableEntry) -> Result<u32, TableError> {
-        // NOTE: The performance of this new key calculation could be very bad once keys wrap
-        // around.
-        if self.map.len() == u32::MAX as usize {
-            return Err(TableError::Full);
-        }
-        loop {
-            let key = self.next_key;
-            self.next_key = self.next_key.wrapping_add(1);
-            if self.map.contains_key(&key) {
-                continue;
-            }
-            self.map.insert(key, e);
-            return Ok(key);
-        }
+    /// Get an immutable reference to a resource of a given type at a given
+    /// index.
+    ///
+    /// Multiple shared references can be borrowed at any given time.
+    pub fn get<T: Any + Sized>(&self, key: &Resource<T>) -> Result<&T, TableError> {
+        self.get_(key.rep())?
+            .downcast_ref()
+            .ok_or(TableError::WrongType)
     }
 
-    /// Check if the table has a resource at the given index.
-    pub fn contains_key(&self, key: u32) -> bool {
-        self.map.contains_key(&key)
+    fn get_(&self, key: u32) -> Result<&dyn Any, TableError> {
+        let r = self.occupied(key)?;
+        Ok(&*r.entry)
     }
 
-    /// Check if the resource at a given index can be downcast to a given type.
-    /// Note: this will always fail if the resource is already borrowed.
-    pub fn is<T: Any + Sized>(&self, key: u32) -> bool {
-        if let Some(r) = self.map.get(&key) {
-            r.entry.is::<T>()
-        } else {
-            false
-        }
+    /// Get an mutable reference to a resource of a given type at a given
+    /// index.
+    pub fn get_mut<T: Any + Sized>(&mut self, key: &Resource<T>) -> Result<&mut T, TableError> {
+        self.get_any_mut(key.rep())?
+            .downcast_mut()
+            .ok_or(TableError::WrongType)
     }
 
-    /// Get an immutable reference to a resource of a given type at a given index. Multiple
-    /// immutable references can be borrowed at any given time. Borrow failure
-    /// results in a trapping error.
-    pub fn get<T: Any + Sized>(&self, key: u32) -> Result<&T, TableError> {
-        if let Some(r) = self.map.get(&key) {
-            r.entry
-                .downcast_ref::<T>()
-                .ok_or_else(|| TableError::WrongType)
-        } else {
-            Err(TableError::NotPresent)
-        }
+    /// Returns the raw `Any` at the `key` index provided.
+    pub fn get_any_mut(&mut self, key: u32) -> Result<&mut dyn Any, TableError> {
+        let r = self.occupied_mut(key)?;
+        Ok(&mut *r.entry)
     }
 
-    /// Get a mutable reference to a resource of a given type at a given index. Only one mutable
-    /// reference can be borrowed at any given time. Borrow failure results in a trapping error.
-    pub fn get_mut<T: Any + Sized>(&mut self, key: u32) -> Result<&mut T, TableError> {
-        if let Some(r) = self.map.get_mut(&key) {
-            r.entry
-                .downcast_mut::<T>()
-                .ok_or_else(|| TableError::WrongType)
-        } else {
-            Err(TableError::NotPresent)
-        }
-    }
-
-    /// Get an [`OccupiedEntry`] corresponding to a table entry, if it exists. This allows you to
-    /// remove or replace the entry based on its contents. The methods available are a subset of
-    /// [`std::collections::hash_map::OccupiedEntry`] - it does not give access to the key, it
-    /// restricts replacing the entry to items of the same type, and it does not allow for deletion.
-    pub fn entry(&mut self, index: u32) -> Result<OccupiedEntry, TableError> {
-        if self.map.contains_key(&index) {
-            Ok(OccupiedEntry { table: self, index })
-        } else {
-            Err(TableError::NotPresent)
+    /// Same as `delete`, but typed
+    pub fn delete<T>(&mut self, resource: Resource<T>) -> Result<T, TableError>
+    where
+        T: Any,
+    {
+        debug_assert!(resource.owned());
+        let entry = self.delete_entry(resource.rep())?;
+        match entry.entry.downcast() {
+            Ok(t) => Ok(*t),
+            Err(_e) => Err(TableError::WrongType),
         }
     }
 
     fn delete_entry(&mut self, key: u32) -> Result<TableEntry, TableError> {
-        if !self
-            .map
-            .get(&key)
-            .ok_or(TableError::NotPresent)?
-            .children
-            .is_empty()
-        {
+        if !self.occupied(key)?.children.is_empty() {
             return Err(TableError::HasChildren);
         }
-        let e = self.map.remove(&key).unwrap();
+        let e = self.free_entry(key as usize);
         if let Some(parent) = e.parent {
             // Remove deleted resource from parent's child list.
             // Parent must still be present because it cant be deleted while still having
             // children:
-            self.map
-                .get_mut(&parent)
+            self.occupied_mut(parent)
                 .expect("missing parent")
                 .remove_child(key);
         }
         Ok(e)
-    }
-
-    /// Remove a resource at a given index from the table.
-    ///
-    /// If this method fails, the resource remains in the table.
-    ///
-    /// May fail with [`TableError::HasChildren`] if the resource has any live
-    /// children.
-    pub fn delete<T: Any + Sized>(&mut self, key: u32) -> Result<T, TableError> {
-        let e = self.delete_entry(key)?;
-        match e.entry.downcast::<T>() {
-            Ok(v) => Ok(*v),
-            Err(entry) => {
-                // Re-insert into parent list
-                if let Some(parent) = e.parent {
-                    self.map
-                        .get_mut(&parent)
-                        .expect("already checked parent exists")
-                        .add_child(key);
-                }
-                // Insert the value back
-                self.map.insert(
-                    key,
-                    TableEntry {
-                        entry,
-                        children: e.children,
-                        parent: e.parent,
-                    },
-                );
-                Err(TableError::WrongType)
-            }
-        }
     }
 
     /// Zip the values of the map with mutable references to table entries corresponding to each
@@ -275,14 +276,27 @@ impl Table {
     ) -> impl Iterator<Item = (Result<&'a mut dyn Any, TableError>, T)> {
         map.into_iter().map(move |(k, v)| {
             let item = self
-                .map
-                .get_mut(&k)
+                .occupied_mut(k)
                 .map(|e| Box::as_mut(&mut e.entry))
                 // Safety: extending the lifetime of the mutable reference.
-                .map(|item| unsafe { &mut *(item as *mut dyn Any) })
-                .ok_or(TableError::NotPresent);
+                .map(|item| unsafe { &mut *(item as *mut dyn Any) });
             (item, v)
         })
+    }
+
+    /// Iterate over all children belonging to the provided parent
+    pub fn iter_children<T>(
+        &self,
+        parent: &Resource<T>,
+    ) -> Result<impl Iterator<Item = &(dyn Any + Send + Sync)>, TableError>
+    where
+        T: 'static,
+    {
+        let parent_entry = self.occupied(parent.rep())?;
+        Ok(parent_entry.children.iter().map(|child_index| {
+            let child = self.occupied(*child_index).expect("missing child");
+            child.entry.as_ref()
+        }))
     }
 }
 
@@ -290,4 +304,34 @@ impl Default for Table {
     fn default() -> Self {
         Table::new()
     }
+}
+
+#[test]
+pub fn test_free_list() {
+    let mut table = Table::new();
+
+    let x = table.push(()).unwrap();
+    assert_eq!(x.rep(), 0);
+
+    let y = table.push(()).unwrap();
+    assert_eq!(y.rep(), 1);
+
+    // Deleting x should put it on the free list, so the next entry should have the same rep.
+    table.delete(x).unwrap();
+    let x = table.push(()).unwrap();
+    assert_eq!(x.rep(), 0);
+
+    // Deleting x and then y should yield indices 1 and then 0 for new entries.
+    table.delete(x).unwrap();
+    table.delete(y).unwrap();
+
+    let y = table.push(()).unwrap();
+    assert_eq!(y.rep(), 1);
+
+    let x = table.push(()).unwrap();
+    assert_eq!(x.rep(), 0);
+
+    // As the free list is empty, this entry will have a new id.
+    let x = table.push(()).unwrap();
+    assert_eq!(x.rep(), 2);
 }

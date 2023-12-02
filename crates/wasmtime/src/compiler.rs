@@ -28,7 +28,7 @@ use std::collections::{btree_map, BTreeMap, BTreeSet};
 use std::{any::Any, collections::HashMap};
 use wasmtime_environ::{
     Compiler, DefinedFuncIndex, FuncIndex, FunctionBodyData, ModuleTranslation, ModuleType,
-    ModuleTypes, PrimaryMap, SignatureIndex, StaticModuleIndex, Tunables, WasmFunctionInfo,
+    ModuleTypesBuilder, PrimaryMap, SignatureIndex, StaticModuleIndex, WasmFunctionInfo,
 };
 use wasmtime_jit::{CompiledFunctionInfo, CompiledModuleInfo};
 
@@ -173,7 +173,7 @@ impl<'a> CompileInputs<'a> {
 
     /// Create the `CompileInputs` for a core Wasm module.
     pub fn for_module(
-        types: &'a ModuleTypes,
+        types: &'a ModuleTypesBuilder,
         translation: &'a ModuleTranslation<'a>,
         functions: PrimaryMap<DefinedFuncIndex, FunctionBodyData<'a>>,
     ) -> Self {
@@ -188,7 +188,7 @@ impl<'a> CompileInputs<'a> {
     /// Create a `CompileInputs` for a component.
     #[cfg(feature = "component-model")]
     pub fn for_component(
-        types: &'a wasmtime_environ::component::ComponentTypes,
+        types: &'a wasmtime_environ::component::ComponentTypesBuilder,
         component: &'a wasmtime_environ::component::ComponentTranslation,
         module_translations: impl IntoIterator<
             Item = (
@@ -200,7 +200,7 @@ impl<'a> CompileInputs<'a> {
     ) -> Self {
         let mut ret = CompileInputs::default();
 
-        ret.collect_inputs_in_translations(types.module_types(), module_translations);
+        ret.collect_inputs_in_translations(types.module_types_builder(), module_translations);
 
         for (idx, trampoline) in component.trampolines.iter() {
             ret.push_input(move |compiler| {
@@ -241,7 +241,7 @@ impl<'a> CompileInputs<'a> {
 
     fn collect_inputs_in_translations(
         &mut self,
-        types: &'a ModuleTypes,
+        types: &'a ModuleTypesBuilder,
         translations: impl IntoIterator<
             Item = (
                 StaticModuleIndex,
@@ -447,8 +447,7 @@ impl FunctionIndices {
     pub fn link_and_append_code<'a>(
         mut self,
         mut obj: object::write::Object<'static>,
-        tunables: &'a Tunables,
-        compiler: &dyn Compiler,
+        engine: &'a Engine,
         compiled_funcs: Vec<(String, Box<dyn Any + Send>)>,
         translations: PrimaryMap<StaticModuleIndex, ModuleTranslation<'_>>,
     ) -> Result<(wasmtime_jit::ObjectBuilder<'a>, Artifacts)> {
@@ -457,6 +456,8 @@ impl FunctionIndices {
         // The result is a vector parallel to `compiled_funcs` where
         // `symbol_ids_and_locs[i]` is the symbol ID and function location of
         // `compiled_funcs[i]`.
+        let compiler = engine.compiler();
+        let tunables = &engine.config().tunables;
         let symbol_ids_and_locs = compiler.append_code(
             &mut obj,
             &compiled_funcs,
@@ -559,7 +560,22 @@ impl FunctionIndices {
 
         artifacts.modules = translations
             .into_iter()
-            .map(|(module, translation)| {
+            .map(|(module, mut translation)| {
+                // If configured attempt to use static memory initialization which
+                // can either at runtime be implemented as a single memcpy to
+                // initialize memory or otherwise enabling virtual-memory-tricks
+                // such as mmap'ing from a file to get copy-on-write.
+                if engine.config().memory_init_cow {
+                    let align = compiler.page_size_align();
+                    let max_always_allowed = engine.config().memory_guaranteed_dense_image_size;
+                    translation.try_static_init(align, max_always_allowed);
+                }
+
+                // Attempt to convert table initializer segments to
+                // FuncTable representation where possible, to enable
+                // table lazy init.
+                translation.try_func_table_init();
+
                 let funcs: PrimaryMap<DefinedFuncIndex, CompiledFunctionInfo> =
                     wasm_functions_for_module(&mut wasm_functions, module)
                         .map(|(key, wasm_func_index)| {

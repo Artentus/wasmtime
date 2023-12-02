@@ -230,7 +230,7 @@ pub enum ComponentItem {
     Module(ModuleIndex),
     Component(ComponentIndex),
     ComponentInstance(ComponentInstanceIndex),
-    Type(wasmparser::types::TypeId),
+    Type(types::ComponentAnyTypeId),
 }
 
 /// Runtime information about the type information contained within a component.
@@ -294,25 +294,6 @@ impl ComponentTypes {
             InterfaceType::Result(i) => &self[*i].abi,
         }
     }
-
-    /// Smaller helper method to find a `SignatureIndex` which corresponds to
-    /// the `resource.drop` intrinsic in components, namely a core wasm function
-    /// type which takes one `i32` argument and has no results.
-    ///
-    /// This is a bit of a hack right now as ideally this find operation
-    /// wouldn't be needed and instead the `SignatureIndex` itself would be
-    /// threaded through appropriately, but that's left for a future
-    /// refactoring. Try not to lean too hard on this method though.
-    pub fn find_resource_drop_signature(&self) -> Option<SignatureIndex> {
-        self.module_types
-            .wasm_signatures()
-            .find(|(_, sig)| {
-                sig.params().len() == 1
-                    && sig.returns().len() == 0
-                    && sig.params()[0] == WasmType::I32
-            })
-            .map(|(i, _)| i)
-    }
 }
 
 macro_rules! impl_index {
@@ -322,6 +303,14 @@ macro_rules! impl_index {
             #[inline]
             fn index(&self, idx: $ty) -> &$output {
                 &self.$field[idx]
+            }
+        }
+
+        impl std::ops::Index<$ty> for ComponentTypesBuilder {
+            type Output = $output;
+            #[inline]
+            fn index(&self, idx: $ty) -> &$output {
+                &self.component_types[idx]
             }
         }
     )*)
@@ -346,6 +335,16 @@ impl_index! {
 // Additionally forward anything that can index `ModuleTypes` to `ModuleTypes`
 // (aka `SignatureIndex`)
 impl<T> Index<T> for ComponentTypes
+where
+    ModuleTypes: Index<T>,
+{
+    type Output = <ModuleTypes as Index<T>>::Output;
+    fn index(&self, idx: T) -> &Self::Output {
+        self.module_types.index(idx)
+    }
+}
+
+impl<T> Index<T> for ComponentTypesBuilder
 where
     ModuleTypes: Index<T>,
 {
@@ -405,16 +404,35 @@ impl ComponentTypesBuilder {
         self.component_types
     }
 
-    /// Returns the `ComponentTypes`-in-progress.
-    pub fn component_types(&self) -> &ComponentTypes {
-        &self.component_types
+    /// Smaller helper method to find a `SignatureIndex` which corresponds to
+    /// the `resource.drop` intrinsic in components, namely a core wasm function
+    /// type which takes one `i32` argument and has no results.
+    ///
+    /// This is a bit of a hack right now as ideally this find operation
+    /// wouldn't be needed and instead the `SignatureIndex` itself would be
+    /// threaded through appropriately, but that's left for a future
+    /// refactoring. Try not to lean too hard on this method though.
+    pub fn find_resource_drop_signature(&self) -> Option<SignatureIndex> {
+        self.module_types
+            .wasm_signatures()
+            .find(|(_, sig)| {
+                sig.params().len() == 1
+                    && sig.returns().len() == 0
+                    && sig.params()[0] == WasmType::I32
+            })
+            .map(|(i, _)| i)
     }
 
     /// Returns the underlying builder used to build up core wasm module types.
     ///
     /// Note that this is shared across all modules found within a component to
     /// improve the wins from deduplicating function signatures.
-    pub fn module_types_builder(&mut self) -> &mut ModuleTypesBuilder {
+    pub fn module_types_builder(&self) -> &ModuleTypesBuilder {
+        &self.module_types
+    }
+
+    /// Same as `module_types_builder`, but `mut`.
+    pub fn module_types_builder_mut(&mut self) -> &mut ModuleTypesBuilder {
         &mut self.module_types
     }
 
@@ -440,9 +458,9 @@ impl ComponentTypesBuilder {
     pub fn convert_component_func_type(
         &mut self,
         types: types::TypesRef<'_>,
-        id: types::TypeId,
+        id: types::ComponentFuncTypeId,
     ) -> Result<TypeFuncIndex> {
-        let ty = types[id].unwrap_component_func();
+        let ty = &types[id];
         let params = ty
             .params
             .iter()
@@ -480,9 +498,13 @@ impl ComponentTypesBuilder {
             types::ComponentEntityType::Func(id) => {
                 TypeDef::ComponentFunc(self.convert_component_func_type(types, id)?)
             }
-            types::ComponentEntityType::Type { created, .. } => match types[created] {
-                types::Type::Defined(_) => TypeDef::Interface(self.defined_type(types, created)?),
-                types::Type::Resource(_) => TypeDef::Resource(self.resource_id(types, created)),
+            types::ComponentEntityType::Type { created, .. } => match created {
+                types::ComponentAnyTypeId::Defined(id) => {
+                    TypeDef::Interface(self.defined_type(types, id)?)
+                }
+                types::ComponentAnyTypeId::Resource(id) => {
+                    TypeDef::Resource(self.resource_id(id.resource()))
+                }
                 _ => bail!("unsupported type export"),
             },
             types::ComponentEntityType::Value(_) => bail!("values not supported"),
@@ -493,31 +515,33 @@ impl ComponentTypesBuilder {
     pub fn convert_type(
         &mut self,
         types: types::TypesRef<'_>,
-        id: types::TypeId,
+        id: types::ComponentAnyTypeId,
     ) -> Result<TypeDef> {
-        Ok(match &types[id] {
-            types::Type::Defined(_) => TypeDef::Interface(self.defined_type(types, id)?),
-            types::Type::Module(_) => TypeDef::Module(self.convert_module(types, id)?),
-            types::Type::Component(_) => TypeDef::Component(self.convert_component(types, id)?),
-            types::Type::ComponentInstance(_) => {
+        Ok(match id {
+            types::ComponentAnyTypeId::Defined(id) => {
+                TypeDef::Interface(self.defined_type(types, id)?)
+            }
+            types::ComponentAnyTypeId::Component(id) => {
+                TypeDef::Component(self.convert_component(types, id)?)
+            }
+            types::ComponentAnyTypeId::Instance(id) => {
                 TypeDef::ComponentInstance(self.convert_instance(types, id)?)
             }
-            types::Type::ComponentFunc(_) => {
+            types::ComponentAnyTypeId::Func(id) => {
                 TypeDef::ComponentFunc(self.convert_component_func_type(types, id)?)
             }
-            types::Type::Instance(_) | types::Type::Sub(_) => {
-                unreachable!()
+            types::ComponentAnyTypeId::Resource(id) => {
+                TypeDef::Resource(self.resource_id(id.resource()))
             }
-            types::Type::Resource(_) => TypeDef::Resource(self.resource_id(types, id)),
         })
     }
 
     fn convert_component(
         &mut self,
         types: types::TypesRef<'_>,
-        id: types::TypeId,
+        id: types::ComponentTypeId,
     ) -> Result<TypeComponentIndex> {
-        let ty = types[id].unwrap_component();
+        let ty = &types[id];
         let mut result = TypeComponent::default();
         for (name, ty) in ty.imports.iter() {
             result.imports.insert(
@@ -537,9 +561,9 @@ impl ComponentTypesBuilder {
     fn convert_instance(
         &mut self,
         types: types::TypesRef<'_>,
-        id: types::TypeId,
+        id: types::ComponentInstanceTypeId,
     ) -> Result<TypeComponentInstanceIndex> {
-        let ty = types[id].unwrap_component_instance();
+        let ty = &types[id];
         let mut result = TypeComponentInstance::default();
         for (name, ty) in ty.exports.iter() {
             result.exports.insert(
@@ -553,9 +577,9 @@ impl ComponentTypesBuilder {
     fn convert_module(
         &mut self,
         types: types::TypesRef<'_>,
-        id: types::TypeId,
+        id: types::ComponentCoreModuleTypeId,
     ) -> Result<TypeModuleIndex> {
-        let ty = &types[id].unwrap_module();
+        let ty = &types[id];
         let mut result = TypeModule::default();
         for ((module, field), ty) in ty.imports.iter() {
             result.imports.insert(
@@ -580,7 +604,7 @@ impl ComponentTypesBuilder {
             types::EntityType::Func(idx) => {
                 let ty = types[*idx].unwrap_func();
                 let ty = self.convert_func_type(ty);
-                EntityType::Function(self.module_types_builder().wasm_func_type(ty))
+                EntityType::Function(self.module_types_builder_mut().wasm_func_type(*idx, ty))
             }
             types::EntityType::Table(ty) => EntityType::Table(self.convert_table_type(ty)),
             types::EntityType::Memory(ty) => EntityType::Memory(ty.clone().into()),
@@ -592,9 +616,9 @@ impl ComponentTypesBuilder {
     fn defined_type(
         &mut self,
         types: types::TypesRef<'_>,
-        id: types::TypeId,
+        id: types::ComponentDefinedTypeId,
     ) -> Result<InterfaceType> {
-        let ret = match types[id].unwrap_defined() {
+        let ret = match &types[id] {
             types::ComponentDefinedType::Primitive(ty) => ty.into(),
             types::ComponentDefinedType::Record(e) => {
                 InterfaceType::Record(self.record_type(types, e)?)
@@ -614,9 +638,11 @@ impl ComponentTypesBuilder {
             types::ComponentDefinedType::Result { ok, err } => {
                 InterfaceType::Result(self.result_type(types, ok, err)?)
             }
-            types::ComponentDefinedType::Own(r) => InterfaceType::Own(self.resource_id(types, *r)),
+            types::ComponentDefinedType::Own(r) => {
+                InterfaceType::Own(self.resource_id(r.resource()))
+            }
             types::ComponentDefinedType::Borrow(r) => {
-                InterfaceType::Borrow(self.resource_id(types, *r))
+                InterfaceType::Borrow(self.resource_id(r.resource()))
             }
         };
         let info = self.type_information(&ret);
@@ -768,12 +794,7 @@ impl ComponentTypesBuilder {
 
     /// Converts a wasmparser `id`, which must point to a resource, to its
     /// corresponding `TypeResourceTableIndex`.
-    pub fn resource_id(
-        &mut self,
-        types: types::TypesRef<'_>,
-        id: types::TypeId,
-    ) -> TypeResourceTableIndex {
-        let id = types[id].unwrap_resource();
+    pub fn resource_id(&mut self, id: types::ResourceId) -> TypeResourceTableIndex {
         self.resources.convert(id, &mut self.component_types)
     }
 
@@ -894,20 +915,8 @@ impl ComponentTypesBuilder {
 }
 
 impl TypeConvert for ComponentTypesBuilder {
-    fn lookup_heap_type(&self, _index: TypeIndex) -> WasmHeapType {
+    fn lookup_heap_type(&self, _index: wasmparser::UnpackedIndex) -> WasmHeapType {
         panic!("heap types are not supported yet")
-    }
-}
-
-// Forward the indexing impl to the internal `TypeTables`
-impl<T> Index<T> for ComponentTypesBuilder
-where
-    ComponentTypes: Index<T>,
-{
-    type Output = <ComponentTypes as Index<T>>::Output;
-
-    fn index(&self, sig: T) -> &Self::Output {
-        &self.component_types[sig]
     }
 }
 

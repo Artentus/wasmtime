@@ -1,7 +1,6 @@
 //! JIT-style runtime for WebAssembly using Cranelift.
 
-#![deny(missing_docs, trivial_numeric_casts, unused_extern_crates)]
-#![warn(unused_import_braces)]
+#![deny(missing_docs)]
 
 mod code_memory;
 mod debug;
@@ -11,9 +10,10 @@ pub mod profiling;
 mod unwind;
 
 pub use crate::code_memory::CodeMemory;
+#[cfg(feature = "addr2line")]
+pub use crate::instantiate::SymbolizeContext;
 pub use crate::instantiate::{
     subslice_range, CompiledFunctionInfo, CompiledModule, CompiledModuleInfo, ObjectBuilder,
-    SymbolizeContext,
 };
 pub use demangling::*;
 

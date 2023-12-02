@@ -7,6 +7,7 @@ use wasmtime::{
     Config, Engine, InstanceAllocationStrategy, PoolingAllocationConfig, Store, Strategy,
 };
 use wasmtime_environ::WASM_PAGE_SIZE;
+use wasmtime_runtime::MpkEnabled;
 use wasmtime_wast::WastContext;
 
 include!(concat!(env!("OUT_DIR"), "/wast_testsuite_tests.rs"));
@@ -123,14 +124,23 @@ fn run_wast(wast: &str, strategy: Strategy, pooling: bool) -> anyhow::Result<()>
         }
 
         // The limits here are crafted such that the wast tests should pass.
-        // However, these limits may become insufficient in the future as the wast tests change.
-        // If a wast test fails because of a limit being "exceeded" or if memory/table
-        // fails to grow, the values here will need to be adjusted.
+        // However, these limits may become insufficient in the future as the
+        // wast tests change. If a wast test fails because of a limit being
+        // "exceeded" or if memory/table fails to grow, the values here will
+        // need to be adjusted.
         let mut pool = PoolingAllocationConfig::default();
-        pool.total_memories(450)
+        pool.total_memories(450 * 2)
+            .max_memory_protection_keys(2)
             .memory_pages(805)
             .max_memories_per_module(if multi_memory { 9 } else { 1 })
             .max_tables_per_module(4);
+
+        // When testing, we may choose to start with MPK force-enabled to ensure
+        // we use that functionality.
+        if std::env::var("WASMTIME_TEST_FORCE_MPK").is_ok() {
+            pool.memory_protection_keys(MpkEnabled::Enable);
+        }
+
         cfg.allocation_strategy(InstanceAllocationStrategy::Pooling(pool));
         Some(lock_pooling())
     } else {
@@ -180,7 +190,7 @@ fn feature_found_src(bytes: &[u8], name: &str) -> bool {
 // specified maximum we can put a cap on the virtual address space reservations
 // made.
 fn lock_pooling() -> impl Drop {
-    const MAX_CONCURRENT_POOLING: u32 = 8;
+    const MAX_CONCURRENT_POOLING: u32 = 4;
 
     static ACTIVE: Lazy<MyState> = Lazy::new(MyState::default);
 

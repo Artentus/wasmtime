@@ -27,7 +27,7 @@ instructions. For example:
   immediate.
 
 One could write something like the following in ISLE (simplified from
-the real code [here](../codegen/src/isa/x64/lower.isle)):
+the real code [here](https://github.com/bytecodealliance/wasmtime/blob/main/cranelift/codegen/src/isa/x64/lower.isle)):
 
 ```lisp
 ;; Add two registers.
@@ -987,7 +987,7 @@ evaluate the expression (`EXPR2` or `EXPR3` above) first. An
 expression in an if-let context is allowed to be "fallible": the
 constructors return `Option<T>` at the Rust level and can return
 `None`, in which case the whole rule application fails and we move on
-to the next rule as if the main pattern had failed to match. (MOre on
+to the next rule as if the main pattern had failed to match. (More on
 the fallible constructors below.) If the expression evaluation
 succeeds, we match the associated pattern (`PAT2` or `PAT3` above)
 against the resulting value. This too can fail, causing the whole rule
